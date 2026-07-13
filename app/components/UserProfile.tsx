@@ -1,16 +1,25 @@
 // app/components/UserProfile.tsx
 import React, { useState, useEffect } from 'react';
 import { User, Calculator, CheckCircle } from 'lucide-react';
-import { saveProfile, loadProfile, calculateMacros } from '../lib/profileStorage';
+import {
+  saveProfile,
+  loadProfile,
+  calculateTMB,
+  calculateTDEE,
+  calculateTargetCalories,
+  calculateMacros,
+} from '../lib/profileStorage';
 
 export function UserProfileComponent({ currentTheme }: { currentTheme: any }) {
   const [profile, setProfile] = useState({
     name: '', age: 25, gender: 'male' as 'male' | 'female',
-    weight: 80, height: 175, activityLevel: 'moderate', goal: 'maintenance'
+    weight: 80, height: 175, activityLevel: 'moderate', goal: 'maintenance',
+    maintenanceIntent: 'stability' as 'stability' | 'recomposition' | 'preserve' | 'performance',
   });
 
   const [results, setResults] = useState({ tmb: 0, tdee: 0, target: 0, protein: 0, carbs: 0, fat: 0 });
   const [saved, setSaved] = useState(false);
+  const [calculatedGoal, setCalculatedGoal] = useState<string | null>(null);
 
   // Carrega perfil salvo ao abrir o app
   useEffect(() => {
@@ -23,8 +32,10 @@ export function UserProfileComponent({ currentTheme }: { currentTheme: any }) {
         weight: stored.weight,
         height: stored.height,
         activityLevel: stored.activityLevel,
-        goal: stored.goal
+        goal: stored.goal,
+        maintenanceIntent: (stored.maintenanceIntent ?? 'stability') as 'stability' | 'recomposition' | 'preserve' | 'performance',
       });
+      setCalculatedGoal(stored.goal);
       setResults({
         tmb: stored.tmb,
         tdee: stored.tdee,
@@ -37,60 +48,70 @@ export function UserProfileComponent({ currentTheme }: { currentTheme: any }) {
   }, []);
 
   const calculateAndSave = () => {
-    const { weight, height, age, gender, activityLevel, goal } = profile;
+    const { weight, height, age, gender, activityLevel, goal, maintenanceIntent } = profile;
 
-    // TMB — Mifflin-St Jeor
-    let tmb = (10 * weight) + (6.25 * height) - (5 * age);
-    tmb = gender === 'male' ? tmb + 5 : tmb - 161;
-
-    // Fator de Atividade
-    const multipliers: Record<string, number> = {
-      sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725, very_active: 1.9
-    };
-    const tdee = tmb * (multipliers[activityLevel] || 1.55);
-
-    // Ajuste por Objetivo
-    let target = tdee;
-    if (goal === 'loss') target -= 500;
-    if (goal === 'gain') target += 300;
-
-    // Macros
+    // Cálculos centralizados via profileStorage
+    const tmb    = calculateTMB({ weight, height, age, gender });
+    const tdee   = calculateTDEE(tmb, activityLevel);
+    const target = calculateTargetCalories(tdee, goal);
     const macros = calculateMacros({ weight, goal, targetCalories: target });
 
-    const newResults = {
-      tmb, tdee, target,
-      protein: macros.protein,
-      carbs: macros.carbs,
-      fat: macros.fat
-    };
+    setResults({ tmb, tdee, target, protein: macros.protein, carbs: macros.carbs, fat: macros.fat });
+    setCalculatedGoal(goal);
 
-    setResults(newResults);
-
-    // Salva no LocalStorage
     saveProfile({
       name: profile.name,
-      age: profile.age,
-      gender: profile.gender,
-      weight: profile.weight,
-      height: profile.height,
-      activityLevel: profile.activityLevel,
-      goal: profile.goal,
+      age,
+      gender,
+      weight,
+      height,
+      activityLevel,
+      goal,
+      maintenanceIntent: goal === 'maintenance' ? maintenanceIntent : undefined,
       tmb,
       tdee,
       targetCalories: target,
       targetProtein: macros.protein,
       targetCarbs: macros.carbs,
-      targetFat: macros.fat
+      targetFat: macros.fat,
     });
 
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
   };
 
-  const goalLabel: Record<string, string> = {
-    loss: '🔥 Perda de Gordura',
-    maintenance: '⚖️ Manutenção',
-    gain: '💪 Hipertrofia'
+  const goalConfig: Record<string, { label: string; emoji: string; color: string; bg: string; border: string; description: string }> = {
+    loss: {
+      label: 'Perda de Gordura',
+      emoji: '🔥',
+      color: 'text-orange-400',
+      bg: 'bg-orange-500/15',
+      border: 'border-orange-500/50',
+      description: 'Déficit calórico moderado para perda de gordura com preservação muscular.',
+    },
+    maintenance: {
+      label: 'Manutenção',
+      emoji: '⚖️',
+      color: 'text-blue-400',
+      bg: 'bg-blue-500/15',
+      border: 'border-blue-500/50',
+      description: 'Equilíbrio calórico para manter peso e saúde com qualidade.',
+    },
+    gain: {
+      label: 'Hipertrofia',
+      emoji: '💪',
+      color: 'text-emerald-400',
+      bg: 'bg-emerald-500/15',
+      border: 'border-emerald-500/50',
+      description: 'Superávit calórico controlado para ganho de massa muscular.',
+    },
+  };
+
+  const maintenanceIntentLabel: Record<string, string> = {
+    stability:     '🧘 Estabilidade e Saúde',
+    recomposition: '🔄 Recomposição Corporal',
+    preserve:      '🏆 Preservar Resultado',
+    performance:   '⚡ Manter Desempenho',
   };
 
   return (
@@ -175,6 +196,39 @@ export function UserProfileComponent({ currentTheme }: { currentTheme: any }) {
                 <option value="gain">💪 Ganhar Massa (Hipertrofia)</option>
               </select>
             </label>
+
+            {/* Intenção de manutenção — aparece apenas quando objetivo = manutenção */}
+            {profile.goal === 'maintenance' && (
+              <label className="block">
+                <span className="text-[10px] font-black uppercase text-gray-500 ml-2">Intenção de Manutenção</span>
+                <select
+                  className={`w-full p-4 rounded-2xl bg-black/30 border border-blue-500/40 ${currentTheme.text} outline-none appearance-none`}
+                  value={profile.maintenanceIntent}
+                  onChange={e => setProfile({...profile, maintenanceIntent: e.target.value as any})}>
+                  <option value="stability">🧘 Estabilidade e Saúde</option>
+                  <option value="recomposition">🔄 Recomposição Corporal</option>
+                  <option value="preserve">🏆 Preservar Resultado</option>
+                  <option value="performance">⚡ Manter Desempenho</option>
+                </select>
+              </label>
+            )}
+
+            {/* Destaque visual do objetivo após calcular */}
+            {calculatedGoal && goalConfig[calculatedGoal] && (
+              <div className={`p-4 rounded-2xl border-2 ${goalConfig[calculatedGoal].bg} ${goalConfig[calculatedGoal].border} transition-all`}>
+                <p className={`text-lg font-black ${goalConfig[calculatedGoal].color}`}>
+                  {goalConfig[calculatedGoal].emoji} {goalConfig[calculatedGoal].label}
+                </p>
+                <p className="text-[10px] text-gray-400 mt-1 leading-relaxed">
+                  {goalConfig[calculatedGoal].description}
+                </p>
+                {calculatedGoal === 'maintenance' && profile.maintenanceIntent && (
+                  <p className={`text-[10px] font-bold mt-2 ${goalConfig[calculatedGoal].color}`}>
+                    {maintenanceIntentLabel[profile.maintenanceIntent]}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -195,7 +249,7 @@ export function UserProfileComponent({ currentTheme }: { currentTheme: any }) {
         <div className={`p-8 rounded-3xl border-2 shadow-2xl ${currentTheme.border} bg-emerald-500/5`}>
           <div className="text-center mb-6">
             <p className="text-[11px] font-black text-gray-500 uppercase tracking-widest mb-1">
-              {goalLabel[profile.goal]} — Meta Diária
+              {goalConfig[calculatedGoal ?? ''].label} — Meta Diária
             </p>
             <p className="text-6xl font-black text-emerald-500">
               {results.target.toFixed(0)} <span className="text-xl text-gray-400">kcal</span>
