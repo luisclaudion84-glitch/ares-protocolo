@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Dumbbell,
   ChevronDown,
@@ -6,16 +6,21 @@ import {
   RotateCcw,
   CheckCircle2,
   Save,
+  Clock,
+  Activity,
+  Moon,
+  Brain,
+  MessageSquare
 } from 'lucide-react';
 import {
   initialWorkouts,
+  getTotalSets,
   type Workout,
   type Exercise,
   type EquipmentType,
 } from '../data/workoutData';
 import type { Theme } from '../types/themes';
-import { supabase } from '../lib/supabase.ts';
-import { saveProfile, loadProfile } from '../lib/profileStorage';
+import { supabase } from '../lib/supabase';
 
 interface WorkoutManagerProps {
   currentTheme: Theme;
@@ -24,6 +29,9 @@ interface WorkoutManagerProps {
 interface SetRecord {
   weight: string;
   reps: string;
+  duration_minutes?: number;
+  zone_2_minutes?: number;
+  completed?: boolean;
 }
 
 interface ExerciseRecord {
@@ -33,184 +41,200 @@ interface ExerciseRecord {
 
 type WorkoutRecords = Record<string, ExerciseRecord>;
 
-function createEmptySets(setCount: number): SetRecord[] {
-  return Array.from({ length: setCount }, () => ({ weight: '', reps: '' }));
-}
-
 export function WorkoutManager({ currentTheme }: WorkoutManagerProps) {
-  const [workouts] = useState<Workout[]>(initialWorkouts);
   const [activeWorkoutId, setActiveWorkoutId] = useState<string>(initialWorkouts[0]?.id ?? '');
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [expandedExerciseId, setExpandedExerciseId] = useState<string | null>(null);
   const [records, setRecords] = useState<WorkoutRecords>({});
-  const [workoutTime, setWorkoutTime] = useState<string>(() => loadProfile()?.workoutTime ?? '');
+  const [loading, setLoading] = useState(false);
 
-  const activeWorkout = workouts.find((w) => w.id === activeWorkoutId) ?? workouts[0];
+  // Estados de Contexto (Opcionais)
+  const [sleepQuality, setSleepQuality] = useState<number>(3);
+  const [readiness, setReadiness] = useState<number>(3);
+  const [sessionRpe, setSessionRpe] = useState<number>(5);
+  const [notes, setNotes] = useState('');
+
+  const activeWorkout = initialWorkouts.find((w) => w.id === activeWorkoutId) || initialWorkouts[0];
   const isLight = currentTheme.id === 'light';
 
-  function handleWorkoutTimeChange(time: string) {
-    setWorkoutTime(time);
-    const profile = loadProfile();
-    if (profile) saveProfile({ ...profile, workoutTime: time });
-  }
-
-  function getExerciseRecord(exercise: Exercise): ExerciseRecord {
-    return records[exercise.id] ?? {
-      equipment: exercise.defaultEquipment,
-      sets: createEmptySets(exercise.sets),
-    };
-  }
-
-  function handleWorkoutChange(workoutId: string) {
-    setActiveWorkoutId(workoutId);
-    setExpandedExerciseId(null);
-  }
-
-  function toggleExercise(exerciseId: string) {
-    setExpandedExerciseId((prev) => (prev === exerciseId ? null : exerciseId));
-  }
-
-  function handleEquipmentChange(exercise: Exercise, equipment: EquipmentType) {
-    const current = getExerciseRecord(exercise);
-    setRecords((prev) => ({ ...prev, [exercise.id]: { ...current, equipment } }));
-  }
-
-  function handleSetChange(exercise: Exercise, setIndex: number, field: 'weight' | 'reps', value: string) {
-    const current = getExerciseRecord(exercise);
-    const updatedSets = [...current.sets];
-    updatedSets[setIndex] = { ...updatedSets[setIndex], [field]: value };
-    setRecords((prev) => ({ ...prev, [exercise.id]: { ...current, sets: updatedSets } }));
-  }
-
-  function clearExerciseRecord(exercise: Exercise) {
-    setRecords((prev) => ({
-      ...prev,
-      [exercise.id]: { equipment: exercise.defaultEquipment, sets: createEmptySets(exercise.sets) },
-    }));
-  }
-
-  function isSetComplete(set: SetRecord) {
-    return set.weight.trim() !== '' && set.reps.trim() !== '';
-  }
-
-  function countCompletedSets(exercise: Exercise) {
-    return getExerciseRecord(exercise).sets.filter(isSetComplete).length;
-  }
-
-  async function handleFinishWorkout() {
+  // --- 1. GESTÃO DE SESSÃO NO SUPABASE ---
+  const initSession = useCallback(async (workoutId: string) => {
+    setLoading(true);
     try {
-      const { data: session, error: sessionError } = await supabase
+      // Busca sessão aberta do mesmo treino nas últimas 12h
+      const { data: existing } = await supabase
         .from('workout_sessions')
-        .insert([{ workout_id: activeWorkout.id, duration: activeWorkout.duration }])
-        .select()
+        .select('*')
+        .eq('workout_id', workoutId)
+        .is('completed_at', null)
+        .order('created_at', { ascending: false })
+        .limit(1)
         .single();
 
-      if (sessionError) throw sessionError;
+      if (existing) {
+        setSessionId(existing.id);
+        // Carregar séries já salvas
+        const { data: savedRecords } = await supabase
+          .from('exercise_records')
+          .select('*')
+          .eq('session_id', existing.id);
 
-      const recordsToSave = Object.entries(records).flatMap(([exId, exRecord]) =>
-        exRecord.sets
-          .filter((set) => set.weight.trim() !== '' || set.reps.trim() !== '')
-          .map((set, index) => ({
-            session_id: session.id,
-            exercise_id: exId,
-            equipment: exRecord.equipment,
-            weight: set.weight,
-            reps: set.reps,
-            set_index: index + 1,
-          }))
-      );
+        if (savedRecords) {
+          const newRecords: WorkoutRecords = {};
+          savedRecords.forEach(rec => {
+            if (!newRecords[rec.exercise_id]) {
+              newRecords[rec.exercise_id] = { equipment: rec.equipment as EquipmentType, sets: [] };
+            }
+            newRecords[rec.exercise_id].sets[rec.set_index - 1] = {
+              weight: rec.weight || '',
+              reps: rec.reps || '',
+              duration_minutes: rec.duration_minutes,
+              zone_2_minutes: rec.zone_2_minutes,
+              completed: true
+            };
+          });
+          setRecords(newRecords);
+        }
+      } else {
+        // Cria nova sessão
+        const { data: newSession, error } = await supabase
+          .from('workout_sessions')
+          .insert([{ workout_id: workoutId, performed_at: new Date().toISOString() }])
+          .select()
+          .single();
 
-      if (recordsToSave.length > 0) {
-        const { error: recordsError } = await supabase.from('exercise_records').insert(recordsToSave);
-        if (recordsError) throw recordsError;
+        if (error) throw error;
+        setSessionId(newSession.id);
+        setRecords({}); // Limpa local para novo treino
       }
+    } catch (err) {
+      console.error("Erro ao iniciar sessão:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-      alert('Treino do Protocolo Ares salvo com sucesso na nuvem! ⚔️');
+  useEffect(() => {
+    initSession(activeWorkoutId);
+  }, [activeWorkoutId, initSession]);
+
+  // --- 2. PERSISTÊNCIA EM TEMPO REAL ---
+  async function upsertSet(exercise: Exercise, setIndex: number, data: SetRecord) {
+    if (!sessionId) return;
+
+    const record = {
+      session_id: sessionId,
+      exercise_id: exercise.id,
+      set_index: setIndex + 1,
+      equipment: records[exercise.id]?.equipment || exercise.defaultEquipment,
+      weight: data.weight,
+      reps: data.reps,
+      duration_minutes: data.duration_minutes || null,
+      zone_2_minutes: data.zone_2_minutes || null
+    };
+
+    const { error } = await supabase
+      .from('exercise_records')
+      .upsert(record, { onConflict: 'session_id,exercise_id,set_index' });
+
+    if (error) console.error("Erro ao salvar série:", error);
+  }
+
+  function handleSetChange(exercise: Exercise, index: number, field: keyof SetRecord, value: string | number) {
+    const currentEx = records[exercise.id] || {
+      equipment: exercise.defaultEquipment,
+      sets: Array.from({ length: exercise.sets }, () => ({ weight: '', reps: '' }))
+    };
+
+    const updatedSets = [...currentEx.sets];
+    updatedSets[index] = { ...updatedSets[index], [field]: value };
+
+    setRecords(prev => ({ ...prev, [exercise.id]: { ...currentEx, sets: updatedSets } }));
+  }
+
+  // --- 3. FINALIZAÇÃO ---
+  async function handleFinishWorkout() {
+    if (!sessionId) return;
+    try {
+      setLoading(true);
+      const { error } = await supabase
+        .from('workout_sessions')
+        .update({
+          completed_at: new Date().toISOString(),
+          sleep_quality: sleepQuality,
+          pre_workout_readiness: readiness,
+          session_rpe: sessionRpe,
+          notes: notes,
+          actual_duration_minutes: 60 // Idealmente calculado por timer futuramente
+        })
+        .eq('id', sessionId);
+
+      if (error) throw error;
+      alert('Sessão finalizada e consolidada no histórico! ⚔️');
+      setSessionId(null);
       setRecords({});
-      setExpandedExerciseId(null);
-    } catch (error) {
-      console.error('Erro ao salvar:', error);
-      alert('Falha ao salvar no banco. Verifique o console.');
+      window.location.reload(); // Reset simples
+    } catch (err) {
+      alert('Erro ao finalizar sessão.');
+    } finally {
+      setLoading(false);
     }
   }
 
-  if (!activeWorkout) return null;
+  const getExerciseRecord = (exercise: Exercise): ExerciseRecord => {
+    const saved = records[exercise.id];
+    if (saved) {
+      // Garante que o número de sets sempre bate com o workoutData
+      // Preenche sets faltantes caso o banco tenha retornado menos séries
+      const sets = Array.from({ length: exercise.sets }, (_, i) =>
+        saved.sets[i] ?? { weight: '', reps: '' }
+      );
+      return { equipment: saved.equipment, sets };
+    }
+    return {
+      equipment: exercise.defaultEquipment,
+      sets: Array.from({ length: exercise.sets }, () => ({ weight: '', reps: '' })),
+    };
+  };
+
+  if (loading && !sessionId) return <div className="text-center p-10 font-bold">Carregando Protocolo Ares...</div>;
 
   return (
-    <div className="w-full max-w-3xl mx-auto space-y-6">
+    <div className="w-full max-w-3xl mx-auto space-y-6 pb-20">
 
       {/* SELETOR DE TREINO */}
       <div className="flex flex-wrap gap-2 justify-center">
-        {workouts.map((workout) => {
-          const isActive = activeWorkoutId === workout.id;
-          return (
-            <button
-              key={workout.id}
-              onClick={() => handleWorkoutChange(workout.id)}
-              className={`px-4 py-2 rounded-xl text-sm font-bold transition-all border ${
-                isActive
-                  ? 'bg-emerald-600 border-emerald-500 text-white shadow-lg'
-                  : `${currentTheme.card} ${currentTheme.border} ${currentTheme.subtext} hover:scale-105`
-              }`}
-            >
-              {workout.id}
-            </button>
-          );
-        })}
+        {initialWorkouts.map((w) => (
+          <button
+            key={w.id}
+            onClick={() => setActiveWorkoutId(w.id)}
+            className={`px-4 py-2 rounded-xl text-sm font-bold transition-all border ${
+              activeWorkoutId === w.id
+                ? 'bg-emerald-600 border-emerald-500 text-white shadow-lg'
+                : `${currentTheme.card} ${currentTheme.border} ${currentTheme.subtext}`
+            }`}
+          >
+            {w.id}
+          </button>
+        ))}
       </div>
 
-      {/* CARD PRINCIPAL */}
-      <div className={`rounded-3xl p-6 border shadow-xl transition-all ${currentTheme.card} ${currentTheme.border}`}>
+      <div className={`rounded-3xl p-6 border shadow-xl ${currentTheme.card} ${currentTheme.border}`}>
 
-        {/* CABEÇALHO */}
-        <div className="flex items-start justify-between gap-4 mb-6">
-          <div className="space-y-2 flex-1">
-
-            <div>
-              <h2 className={`text-2xl font-black italic uppercase ${currentTheme.text}`}>
-                {activeWorkout.title}
-              </h2>
-              <p className={`text-xs font-medium uppercase tracking-widest ${currentTheme.subtext}`}>
-                {activeWorkout.focus}
-              </p>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <span className={`text-[11px] px-3 py-1 rounded-full border ${currentTheme.border} ${currentTheme.subtext}`}>
-                Duração: {activeWorkout.duration}
+        {/* HEADER */}
+        <div className="flex justify-between items-start mb-8">
+          <div>
+            <h2 className={`text-2xl font-black italic uppercase ${currentTheme.text}`}>{activeWorkout.title}</h2>
+            <div className="flex gap-2 mt-2">
+              <span className="text-[10px] px-2 py-1 rounded bg-emerald-500/10 text-emerald-500 font-bold uppercase tracking-wider">
+                {activeWorkout.category === 'strength' ? 'Força' : 'Cardio'}
               </span>
-              <span className={`text-[11px] px-3 py-1 rounded-full border ${currentTheme.border} ${currentTheme.subtext}`}>
-                {activeWorkout.totalSets > 0 ? `${activeWorkout.totalSets} séries totais` : 'Sessão cardiovascular'}
+              <span className={`text-[10px] px-2 py-1 rounded font-bold uppercase ${currentTheme.subtext} border ${currentTheme.border}`}>
+                {activeWorkout.duration} Estimado
               </span>
             </div>
-
-            {/* ⏰ HORÁRIO DE TREINO */}
-            <div className={`mt-3 flex items-center gap-3 p-3 rounded-xl border ${currentTheme.border} ${isLight ? 'bg-slate-50' : 'bg-slate-900/40'}`}>
-              <div className="flex-1">
-                <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${currentTheme.subtext}`}>
-                  Horário do Treino
-                </p>
-                <input
-                  type="time"
-                  value={workoutTime}
-                  onChange={(e) => handleWorkoutTimeChange(e.target.value)}
-                  className={`w-full text-sm px-3 py-2 rounded-lg border outline-none focus:ring-2 focus:ring-emerald-500 ${
-                    isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-slate-800 border-slate-700 text-white'
-                  }`}
-                />
-              </div>
-              <div className="flex-1">
-                <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${currentTheme.subtext}`}>
-                  Salvo
-                </p>
-                <p className={`text-sm font-black ${workoutTime ? 'text-emerald-400' : currentTheme.subtext}`}>
-                  {workoutTime || '--:--'}
-                </p>
-              </div>
-            </div>
-
           </div>
-
-          <Dumbbell className="text-emerald-500 shrink-0" size={30} />
+          <Dumbbell className="text-emerald-500" size={32} />
         </div>
 
         {/* LISTA DE EXERCÍCIOS */}
@@ -218,139 +242,76 @@ export function WorkoutManager({ currentTheme }: WorkoutManagerProps) {
           {activeWorkout.exercises.map((exercise) => {
             const isExpanded = expandedExerciseId === exercise.id;
             const record = getExerciseRecord(exercise);
-            const completedSets = countCompletedSets(exercise);
+            const isLISS = activeWorkout.id === 'LISS' || exercise.name.includes('LISS');
 
             return (
-              <div
-                key={exercise.id}
-                className={`rounded-2xl border overflow-hidden transition-all ${
-                  isExpanded ? 'border-emerald-500/50 ring-1 ring-emerald-500/20' : currentTheme.border
-                }`}
-              >
-                {/* HEADER DO EXERCÍCIO */}
+              <div key={exercise.id} className={`rounded-2xl border overflow-hidden ${isExpanded ? 'border-emerald-500/50' : currentTheme.border}`}>
                 <button
-                  type="button"
-                  onClick={() => toggleExercise(exercise.id)}
-                  className={`w-full p-4 text-left flex items-center justify-between ${isLight ? 'bg-slate-50' : 'bg-slate-900/40'}`}
+                  onClick={() => setExpandedExerciseId(isExpanded ? null : exercise.id)}
+                  className={`w-full p-4 flex items-center justify-between ${isLight ? 'bg-slate-50' : 'bg-slate-900/40'}`}
                 >
-                  <div className="flex items-start gap-3">
-                    <div className={`min-w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs ${
-                      isExpanded ? 'bg-emerald-500 text-white' : 'bg-slate-700 text-slate-300'
-                    }`}>
+                  <div className="flex gap-3 items-center">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${isExpanded ? 'bg-emerald-500 text-white' : 'bg-slate-700 text-white'}`}>
                       {exercise.sets}x
                     </div>
-                    <div className="space-y-1">
-                      <h3 className={`font-bold leading-tight ${currentTheme.text}`}>{exercise.name}</h3>
-                      <p className={`text-[11px] uppercase tracking-wide ${currentTheme.subtext}`}>
-                        {activeWorkout.id !== 'LISS' && `${exercise.defaultEquipment} · `}{exercise.reps}
-                      </p>
-                      <p className={`text-xs ${currentTheme.subtext}`}>{exercise.notes}</p>
-                      <p className="text-[11px] font-semibold text-emerald-500">
-                        {completedSets}/{exercise.sets} séries preenchidas
-                      </p>
+                    <div className="text-left">
+                      <h3 className={`font-bold text-sm ${currentTheme.text}`}>{exercise.name}</h3>
+                      <p className={`text-[10px] uppercase tracking-tighter ${currentTheme.subtext}`}>{exercise.reps} • {exercise.notes}</p>
                     </div>
                   </div>
-                  {isExpanded ? <ChevronUp size={20} className={currentTheme.subtext} /> : <ChevronDown size={20} className={currentTheme.subtext} />}
+                  {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                 </button>
 
-                {/* CORPO DO EXERCÍCIO */}
                 {isExpanded && (
-                  <div className={`p-4 space-y-4 border-t ${currentTheme.border} ${isLight ? 'bg-white' : 'bg-slate-900/60'}`}>
+                  <div className="p-4 space-y-4 border-t border-slate-700/50">
+                    {record.sets.map((set, idx) => (
+                      <div key={idx} className="grid grid-cols-4 gap-2 items-center">
+                        <span className="text-xs font-bold text-slate-500 uppercase">Série {idx + 1}</span>
 
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                      {activeWorkout.id !== 'LISS' ? (
-                        <div className="space-y-1">
-                          <p className={`text-[11px] font-bold uppercase ${currentTheme.subtext}`}>Equipamento utilizado</p>
-                          <select
-                            value={record.equipment}
-                            onChange={(e) => handleEquipmentChange(exercise, e.target.value as EquipmentType)}
-                            className={`text-sm px-3 py-2 rounded-xl border ${
-                              isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-slate-800 border-slate-700 text-white'
-                            }`}
-                          >
-                            <option value="Máquina">Máquina</option>
-                            <option value="Halteres">Halteres</option>
-                            <option value="Barra">Barra</option>
-                            <option value="Polia">Polia</option>
-                            <option value="Peso Corporal">Peso Corporal</option>
-                          </select>
-                        </div>
-                      ) : (
-                        <div className="flex-1">
-                          <p className="text-xs font-bold text-emerald-500 uppercase">Sessão de Cardio</p>
-                        </div>
-                      )}
-
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => clearExerciseRecord(exercise)}
-                          className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all ${currentTheme.border} ${currentTheme.subtext} hover:text-red-400 hover:border-red-400/40`}
-                        >
-                          Limpar
-                        </button>
-                        <button
-                          type="button"
-                          className="px-3 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all flex items-center gap-2"
-                        >
-                          <Save size={14} />
-                          Salvar
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className={`grid ${activeWorkout.id === 'LISS' ? 'grid-cols-3' : 'grid-cols-4'} gap-2 px-2 text-[10px] font-bold uppercase text-slate-500`}>
-                        <span>Série</span>
-                        {activeWorkout.id !== 'LISS' && <span>Carga</span>}
-                        <span>Reps / Tempo</span>
-                        <span className="text-right">Status</span>
-                      </div>
-
-                      {record.sets.map((set, index) => (
-                        <div
-                          key={`${exercise.id}-set-${index}`}
-                          className={`grid ${activeWorkout.id === 'LISS' ? 'grid-cols-3' : 'grid-cols-4'} gap-2 items-center p-2 rounded-xl ${isLight ? 'bg-slate-50' : 'bg-black/10'}`}
-                        >
-                          <span className={`text-sm font-mono font-bold ${currentTheme.subtext}`}>#{index + 1}</span>
-
-                          {activeWorkout.id !== 'LISS' && (
+                        {!isLISS ? (
+                          <>
                             <input
                               type="number"
-                              inputMode="decimal"
-                              placeholder="0"
+                              placeholder="Carga"
                               value={set.weight}
-                              onChange={(e) => handleSetChange(exercise, index, 'weight', e.target.value)}
-                              className={`w-full p-2 text-center rounded-lg border text-sm ${
-                                isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-slate-800 border-slate-700 text-white'
-                              }`}
+                              onChange={(e) => handleSetChange(exercise, idx, 'weight', e.target.value)}
+                              onBlur={() => upsertSet(exercise, idx, set)}
+                              className={`p-2 rounded-lg text-center text-xs border ${isLight ? 'bg-white' : 'bg-slate-800 border-slate-700 text-white'}`}
                             />
-                          )}
-
-                          <input
-                            type="text"
-                            placeholder={exercise.reps}
-                            value={set.reps}
-                            onChange={(e) => handleSetChange(exercise, index, 'reps', e.target.value)}
-                            className={`w-full p-2 text-center rounded-lg border text-sm ${
-                              isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-slate-800 border-slate-700 text-white'
-                            }`}
-                          />
-
-                          <div className="flex justify-end">
-                            <CheckCircle2
-                              size={18}
-                              className={
-                                (activeWorkout.id === 'LISS' ? set.reps.trim() !== '' : isSetComplete(set))
-                                  ? 'text-emerald-500'
-                                  : 'text-slate-600'
-                              }
+                            <input
+                              type="text"
+                              placeholder="Reps"
+                              value={set.reps}
+                              onChange={(e) => handleSetChange(exercise, idx, 'reps', e.target.value)}
+                              onBlur={() => upsertSet(exercise, idx, set)}
+                              className={`p-2 rounded-lg text-center text-xs border ${isLight ? 'bg-white' : 'bg-slate-800 border-slate-700 text-white'}`}
                             />
-                          </div>
+                          </>
+                        ) : (
+                          <>
+                            <input
+                              type="number"
+                              placeholder="Min Totais"
+                              value={set.duration_minutes || ''}
+                              onChange={(e) => handleSetChange(exercise, idx, 'duration_minutes', parseInt(e.target.value))}
+                              onBlur={() => upsertSet(exercise, idx, set)}
+                              className="p-2 rounded-lg text-center text-xs bg-slate-800 border-slate-700 text-white"
+                            />
+                            <input
+                              type="number"
+                              placeholder="Min Zona 2"
+                              value={set.zone_2_minutes || ''}
+                              onChange={(e) => handleSetChange(exercise, idx, 'zone_2_minutes', parseInt(e.target.value))}
+                              onBlur={() => upsertSet(exercise, idx, set)}
+                              className="p-2 rounded-lg text-center text-xs bg-slate-800 border-slate-700 text-white border-emerald-500/30"
+                            />
+                          </>
+                        )}
+                        <div className="flex justify-end">
+                           <CheckCircle2 size={16} className={set.weight || set.duration_minutes ? 'text-emerald-500' : 'text-slate-600'} />
                         </div>
-                      ))}
-                    </div>
-
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -358,19 +319,61 @@ export function WorkoutManager({ currentTheme }: WorkoutManagerProps) {
           })}
         </div>
 
-        {/* BOTÃO FINALIZAR */}
-        <div className="mt-8">
-          <button
-            type="button"
-            onClick={handleFinishWorkout}
-            className={`w-full flex items-center justify-center gap-2 py-3 rounded-2xl border-2 border-dashed font-bold text-sm transition-all ${currentTheme.border} ${currentTheme.subtext} hover:border-emerald-500/50 hover:text-emerald-500`}
-          >
-            <RotateCcw size={16} />
-            Finalizar sessão
-          </button>
+        {/* MÉTRIQUES DE PERFORMANCE ( CONTEXTO ) */}
+        <div className={`mt-8 p-4 rounded-2xl border ${currentTheme.border} ${isLight ? 'bg-slate-50' : 'bg-slate-900/20'}`}>
+          <h4 className={`text-xs font-black uppercase tracking-widest mb-4 flex items-center gap-2 ${currentTheme.text}`}>
+            <Activity size={14} className="text-emerald-500" />
+            Contexto da Sessão
+          </h4>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1">
+                <Moon size={10} /> Qualidade do Sono (1-5)
+              </label>
+              <input type="range" min="1" max="5" value={sleepQuality} onChange={(e) => setSleepQuality(parseInt(e.target.value))} className="w-full h-1 bg-slate-700 rounded-lg accent-emerald-500" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1">
+                <Brain size={10} /> Disposição (1-5)
+              </label>
+              <input type="range" min="1" max="5" value={readiness} onChange={(e) => setReadiness(parseInt(e.target.value))} className="w-full h-1 bg-slate-700 rounded-lg accent-emerald-500" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1">
+                <Clock size={10} /> Esforço da Sessão (1-10)
+              </label>
+              <input type="range" min="1" max="10" value={sessionRpe} onChange={(e) => setSessionRpe(parseInt(e.target.value))} className="w-full h-1 bg-slate-700 rounded-lg accent-emerald-500" />
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <label className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1 mb-1">
+              <MessageSquare size={10} /> Observações Contextuais
+            </label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Ex: Dormi pouco, usei banco inclinado diferente..."
+              className={`w-full p-2 text-xs rounded-lg border outline-none h-16 ${isLight ? 'bg-white' : 'bg-slate-800 border-slate-700 text-white'}`}
+            />
+          </div>
         </div>
 
+        {/* BOTÃO FINALIZAR */}
+        <button
+          onClick={handleFinishWorkout}
+          disabled={loading}
+          className="w-full mt-8 py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black uppercase tracking-widest text-sm transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50"
+        >
+          <RotateCcw size={18} />
+          {loading ? 'Sinalizando Ares...' : 'Finalizar e Consolidar'}
+        </button>
       </div>
+
+      <p className={`text-center text-[10px] uppercase font-bold tracking-widest ${currentTheme.subtext}`}>
+        Os dados são salvos em tempo real na nuvem do Protocolo Ares.
+      </p>
     </div>
   );
 }

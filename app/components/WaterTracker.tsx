@@ -57,9 +57,9 @@ export function WaterTracker({ currentTheme }: { currentTheme: any }) {
             {extraTotal > 0 && <p className="text-[10px] text-emerald-400 font-bold uppercase tracking-widest">+ {extraTotal}ml Recomendado (Clima/Treino)</p>}
           </div>
           <div className="text-right">
-             <p className={`text-xs font-bold ${currentTheme.subtext}`}>FALTAM</p>
-             <p className="text-xl font-black text-white">{Math.max(0, fixedGoal - totalConsumed)}ml</p>
-          </div>
+   <p className={`text-xs font-bold ${currentTheme.subtext}`}>FALTAM</p>
+   <p className={`text-xl font-black ${currentTheme.text}`}>{Math.max(0, fixedGoal - totalConsumed)}ml</p>
+</div>
         </div>
       </div>
 
