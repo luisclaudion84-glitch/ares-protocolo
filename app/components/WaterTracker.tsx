@@ -1,31 +1,53 @@
-import { useState } from 'react';
+// app/components/WaterTracker.tsx
+import { useState, useEffect } from 'react';
 import { Droplets, CloudSun, Dumbbell, Zap } from 'lucide-react';
 import { generateFullProtocol } from '../lib/protocolEngine';
 import { loadProfile } from '../lib/profileStorage';
 import { supabase } from '../lib/supabase';
 
 export function WaterTracker({ currentTheme }: { currentTheme: any }) {
-  // 1. Estados
   const [adjustments, setAdjustments] = useState({ workout: false, creatine: false, heat: false });
   const [logs, setLogs] = useState<{ amount: number }[]>([]);
   const [showCustomWaterInput, setShowCustomWaterInput] = useState(false);
   const [customWaterAmount, setCustomWaterAmount] = useState('');
 
-  // 2. Motor Ares
   const profile = loadProfile();
   const protocol = profile ? generateFullProtocol(profile, adjustments) : null;
   
   const totalConsumed = logs.reduce((acc, log) => acc + log.amount, 0);
   const fixedGoal = protocol?.hydration.fixedDailyGoal || 2500;
   const extraTotal = protocol?.hydration.recommendedExtra || 0;
-  
   const progress = Math.min((totalConsumed / fixedGoal) * 100, 100);
 
-  // 3. Ações
+  // Carrega logs do dia ao montar o componente
+  useEffect(() => {
+    fetchTodayLogs();
+  }, []);
+
+  async function fetchTodayLogs() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const today = new Date().toISOString().split('T')[0];
+
+    const { data } = await supabase
+      .from('water_logs')
+      .select('amount')
+      .eq('user_id', user.id)
+      .gte('created_at', `${today}T00:00:00`)
+      .lte('created_at', `${today}T23:59:59`);
+
+    if (data) setLogs(data);
+  }
+
   async function addWater(amount: number) {
     setLogs(prev => [{ amount }, ...prev]);
     try {
-      await supabase.from('water_logs').insert([{ amount }]);
+      const { data: { user } } = await supabase.auth.getUser();
+      await supabase.from('water_logs').insert([{
+        amount,
+        user_id: user?.id,  // ← user_id vinculado
+      }]);
     } catch (e) {
       console.warn("Salvando apenas localmente.");
     }
@@ -57,9 +79,9 @@ export function WaterTracker({ currentTheme }: { currentTheme: any }) {
             {extraTotal > 0 && <p className="text-[10px] text-emerald-400 font-bold uppercase tracking-widest">+ {extraTotal}ml Recomendado (Clima/Treino)</p>}
           </div>
           <div className="text-right">
-   <p className={`text-xs font-bold ${currentTheme.subtext}`}>FALTAM</p>
-   <p className={`text-xl font-black ${currentTheme.text}`}>{Math.max(0, fixedGoal - totalConsumed)}ml</p>
-</div>
+            <p className={`text-xs font-bold ${currentTheme.subtext}`}>FALTAM</p>
+            <p className={`text-xl font-black ${currentTheme.text}`}>{Math.max(0, fixedGoal - totalConsumed)}ml</p>
+          </div>
         </div>
       </div>
 
@@ -113,7 +135,7 @@ export function WaterTracker({ currentTheme }: { currentTheme: any }) {
         </div>
       )}
 
-      {/* AJUSTES DO DIA (SUGESTÕES) */}
+      {/* AJUSTES DO DIA */}
       <div className="grid grid-cols-3 gap-2">
         <button 
           onClick={() => setAdjustments(p => ({...p, workout: !p.workout}))}

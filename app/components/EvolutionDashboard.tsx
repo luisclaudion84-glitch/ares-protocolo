@@ -31,7 +31,6 @@ interface ChartTheme {
 
 // ─── COMPONENTE PRINCIPAL ─────────────────────────────────────────────────────
 export function EvolutionDashboard({ currentTheme }: { currentTheme: any }) {
-  // Estados de dados
   const [waterData, setWaterData] = useState<any[]>([]);
   const [loadData, setLoadData] = useState<any[]>([]);
   const [zone2Data, setZone2Data] = useState<any[]>([]);
@@ -40,11 +39,9 @@ export function EvolutionDashboard({ currentTheme }: { currentTheme: any }) {
   const [loading, setLoading] = useState(true);
   const [activeChart, setActiveChart] = useState<'water' | 'load' | 'zone2'>('water');
 
-  // Estados dos marcadores manuais
   const [marker, setMarker] = useState({ date: new Date().toISOString().split('T')[0], steps: '', pai: '' });
   const [markerSaved, setMarkerSaved] = useState(false);
 
-  // Tema dos gráficos — adapta ao currentTheme
   const isDark = !currentTheme?.card?.includes('white') &&
                  !currentTheme?.card?.includes('gray-100') &&
                  !currentTheme?.card?.includes('slate-100');
@@ -71,11 +68,16 @@ export function EvolutionDashboard({ currentTheme }: { currentTheme: any }) {
   }
 
   async function fetchWater() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
     const since = new Date();
     since.setDate(since.getDate() - 6);
+
     const { data } = await supabase
       .from('water_logs')
       .select('amount, created_at')
+      .eq('user_id', user.id)
       .gte('created_at', since.toISOString())
       .order('created_at', { ascending: true });
 
@@ -91,14 +93,17 @@ export function EvolutionDashboard({ currentTheme }: { currentTheme: any }) {
   }
 
   async function fetchExercises() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
     const { data } = await supabase
       .from('exercise_records')
       .select('exercise_id, weight, set_index, session_id')
+      .eq('user_id', user.id)
       .order('session_id', { ascending: true });
 
     if (!data || data.length === 0) return;
 
-    // Filtra apenas exercícios de força (exclui cardio/esteira/caminhada)
     const ids = [...new Set(data.map(r => r.exercise_id))];
     const strengthIds = ids.filter(id => {
       const name = (EXERCISE_NAME_MAP[id] || '').toLowerCase();
@@ -130,12 +135,18 @@ export function EvolutionDashboard({ currentTheme }: { currentTheme: any }) {
   }
 
   async function fetchZone2() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
     const since = new Date();
     since.setDate(since.getDate() - 6);
+
     const { data } = await supabase
       .from('exercise_records')
       .select('zone_2_minutes, session_id')
+      .eq('user_id', user.id)
       .gte('zone_2_minutes', 1)
+      .gte('created_at', since.toISOString())
       .order('session_id', { ascending: true });
 
     if (!data) return;
@@ -151,11 +162,16 @@ export function EvolutionDashboard({ currentTheme }: { currentTheme: any }) {
 
   // ─── SALVAR MARCADORES ───────────────────────────────────────────────────────
   async function saveMarker() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
     await supabase.from('daily_markers').insert([{
+      user_id: user.id,
       date: marker.date,
       steps: marker.steps ? parseInt(marker.steps) : null,
       pai: marker.pai ? parseInt(marker.pai) : null,
     }]);
+
     setMarkerSaved(true);
     setTimeout(() => setMarkerSaved(false), 2000);
   }
@@ -207,27 +223,19 @@ export function EvolutionDashboard({ currentTheme }: { currentTheme: any }) {
     }
 
     if (activeChart === 'zone2') {
-  if (zone2Data.length === 0) return <p className={`text-center text-sm py-8 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>Nenhum registro de Zona 2.</p>;
-  return (
-    <ResponsiveContainer width="100%" height={220}>
-      <LineChart data={zone2Data} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} />
-        <XAxis dataKey="sessao" tick={{ fill: chartTheme.text, fontSize: 10, fontWeight: 700 }} />
-        <YAxis tick={{ fill: chartTheme.text, fontSize: 10 }} />
-        <Tooltip content={<CustomTooltip />} />
-        <Line
-          type="monotone"
-          dataKey="minutos"
-          name="min"
-          stroke={chartTheme.tertiary}
-          strokeWidth={3}
-          dot={{ fill: chartTheme.tertiary, r: 5 }}
-          activeDot={{ r: 7 }}
-        />
-      </LineChart>
-    </ResponsiveContainer>
-  );
-}
+      if (zone2Data.length === 0) return <p className={`text-center text-sm py-8 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>Nenhum registro de Zona 2.</p>;
+      return (
+        <ResponsiveContainer width="100%" height={220}>
+          <LineChart data={zone2Data} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} />
+            <XAxis dataKey="sessao" tick={{ fill: chartTheme.text, fontSize: 10, fontWeight: 700 }} />
+            <YAxis tick={{ fill: chartTheme.text, fontSize: 10 }} />
+            <Tooltip content={<CustomTooltip />} />
+            <Line type="monotone" dataKey="minutos" name="min" stroke={chartTheme.tertiary} strokeWidth={3} dot={{ fill: chartTheme.tertiary, r: 5 }} activeDot={{ r: 7 }} />
+          </LineChart>
+        </ResponsiveContainer>
+      );
+    }
 
     return null;
   };
@@ -343,8 +351,14 @@ export function EvolutionDashboard({ currentTheme }: { currentTheme: any }) {
             value={selectedExercise}
             onChange={e => {
               setSelectedExercise(e.target.value);
-              supabase.from('exercise_records').select('exercise_id, weight, set_index, session_id').then(({ data }) => {
-                if (data) buildLoadChart(e.target.value, data);
+              supabase.auth.getUser().then(({ data: { user } }) => {
+                if (!user) return;
+                supabase.from('exercise_records')
+                  .select('exercise_id, weight, set_index, session_id')
+                  .eq('user_id', user.id)
+                  .then(({ data }) => {
+                    if (data) buildLoadChart(e.target.value, data);
+                  });
               });
             }}
             className={`w-full mb-4 p-3 rounded-2xl border outline-none font-bold text-sm ${currentTheme.border} ${currentTheme.card} ${currentTheme.text}`}

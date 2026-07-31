@@ -2,13 +2,13 @@
 import React, { useState, useEffect } from 'react';
 import { User, Calculator, CheckCircle } from 'lucide-react';
 import {
-  saveProfile,
-  loadProfile,
   calculateTMB,
   calculateTDEE,
   calculateTargetCalories,
   calculateMacros,
+  saveProfile, // mantém para cache local
 } from '../lib/profileStorage';
+import { supabase } from '../lib/supabase';
 
 export function UserProfileComponent({ currentTheme }: { currentTheme: any }) {
   const [profile, setProfile] = useState({
@@ -20,37 +20,70 @@ export function UserProfileComponent({ currentTheme }: { currentTheme: any }) {
   const [results, setResults] = useState({ tmb: 0, tdee: 0, target: 0, protein: 0, carbs: 0, fat: 0 });
   const [saved, setSaved] = useState(false);
   const [calculatedGoal, setCalculatedGoal] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // Carrega perfil salvo ao abrir o app
+  // ─── CARREGAR PERFIL DO SUPABASE ──────────────────────────────────────────
   useEffect(() => {
-    const stored = loadProfile();
-    if (stored) {
-      setProfile({
-        name: stored.name,
-        age: stored.age,
-        gender: stored.gender,
-        weight: stored.weight,
-        height: stored.height,
-        activityLevel: stored.activityLevel,
-        goal: stored.goal,
-        maintenanceIntent: (stored.maintenanceIntent ?? 'stability') as 'stability' | 'recomposition' | 'preserve' | 'performance',
-      });
-      setCalculatedGoal(stored.goal);
-      setResults({
-        tmb: stored.tmb,
-        tdee: stored.tdee,
-        target: stored.targetCalories,
-        protein: stored.targetProtein,
-        carbs: stored.targetCarbs,
-        fat: stored.targetFat
-      });
+    async function loadFromSupabase() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setLoading(false); return; }
+
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+
+      if (data) {
+        setProfile({
+          name: data.name || '',
+          age: data.age || 25,
+          gender: data.gender || 'male',
+          weight: data.weight || 80,
+          height: data.height || 175,
+          activityLevel: data.activity_level || 'moderate',
+          goal: data.goal || 'maintenance',
+          maintenanceIntent: (data.maintenance_intent ?? 'stability') as any,
+        });
+        setCalculatedGoal(data.goal);
+        setResults({
+          tmb: data.tmb || 0,
+          tdee: data.tdee || 0,
+          target: data.target_calories || 0,
+          protein: data.target_protein || 0,
+          carbs: data.target_carbs || 0,
+          fat: data.target_fat || 0,
+        });
+
+        // Sincroniza cache local para os outros componentes
+        saveProfile({
+          name: data.name,
+          age: data.age,
+          gender: data.gender,
+          weight: data.weight,
+          height: data.height,
+          activityLevel: data.activity_level,
+          goal: data.goal,
+          maintenanceIntent: data.maintenance_intent,
+          tmb: data.tmb,
+          tdee: data.tdee,
+          targetCalories: data.target_calories,
+          targetProtein: data.target_protein,
+          targetCarbs: data.target_carbs,
+          targetFat: data.target_fat,
+        });
+      }
+
+      setLoading(false);
     }
+
+    loadFromSupabase();
   }, []);
 
-  const calculateAndSave = () => {
+  // ─── CALCULAR E SALVAR NO SUPABASE ────────────────────────────────────────
+  const calculateAndSave = async () => {
     const { weight, height, age, gender, activityLevel, goal, maintenanceIntent } = profile;
 
-    // Cálculos centralizados via profileStorage
     const tmb    = calculateTMB({ weight, height, age, gender });
     const tdee   = calculateTDEE(tmb, activityLevel);
     const target = calculateTargetCalories(tdee, goal);
@@ -59,17 +92,44 @@ export function UserProfileComponent({ currentTheme }: { currentTheme: any }) {
     setResults({ tmb, tdee, target, protein: macros.protein, carbs: macros.carbs, fat: macros.fat });
     setCalculatedGoal(goal);
 
-    saveProfile({
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const payload = {
+      user_id: user.id,
       name: profile.name,
       age,
       gender,
       weight,
       height,
-      activityLevel,
+      activity_level: activityLevel,
       goal,
-      maintenanceIntent: goal === 'maintenance' ? maintenanceIntent : undefined,
+      maintenance_intent: goal === 'maintenance' ? maintenanceIntent : null,
       tmb,
       tdee,
+      target_calories: target,
+      target_protein: macros.protein,
+      target_carbs: macros.carbs,
+      target_fat: macros.fat,
+      updated_at: new Date().toISOString(),
+    };
+
+    // upsert: cria se não existe, atualiza se já existe
+    const { error } = await supabase
+      .from('user_profiles')
+      .upsert(payload, { onConflict: 'user_id' });
+
+    if (error) {
+      console.error('Erro ao salvar perfil:', error.message);
+      return;
+    }
+
+    // Mantém cache local para NutritionTracker / WaterTracker
+    saveProfile({
+      name: profile.name, age, gender, weight, height,
+      activityLevel, goal,
+      maintenanceIntent: goal === 'maintenance' ? maintenanceIntent : undefined,
+      tmb, tdee,
       targetCalories: target,
       targetProtein: macros.protein,
       targetCarbs: macros.carbs,
@@ -80,47 +140,49 @@ export function UserProfileComponent({ currentTheme }: { currentTheme: any }) {
     setTimeout(() => setSaved(false), 3000);
   };
 
+  // ─── CONFIG VISUAL ────────────────────────────────────────────────────────
   const goalConfig: Record<string, { label: string; emoji: string; color: string; bg: string; border: string; description: string }> = {
     loss: {
-      label: 'Perda de Gordura',
-      emoji: '🔥',
-      color: 'text-orange-400',
-      bg: 'bg-orange-500/15',
-      border: 'border-orange-500/50',
+      label: 'Perda de Gordura', emoji: '🔥', color: 'text-orange-400',
+      bg: 'bg-orange-500/15', border: 'border-orange-500/50',
       description: 'Déficit calórico moderado para perda de gordura com preservação muscular.',
     },
     maintenance: {
-      label: 'Manutenção',
-      emoji: '⚖️',
-      color: 'text-blue-400',
-      bg: 'bg-blue-500/15',
-      border: 'border-blue-500/50',
+      label: 'Manutenção', emoji: '⚖️', color: 'text-blue-400',
+      bg: 'bg-blue-500/15', border: 'border-blue-500/50',
       description: 'Equilíbrio calórico para manter peso e saúde com qualidade.',
     },
     gain: {
-      label: 'Hipertrofia',
-      emoji: '💪',
-      color: 'text-emerald-400',
-      bg: 'bg-emerald-500/15',
-      border: 'border-emerald-500/50',
+      label: 'Hipertrofia', emoji: '💪', color: 'text-emerald-400',
+      bg: 'bg-emerald-500/15', border: 'border-emerald-500/50',
       description: 'Superávit calórico controlado para ganho de massa muscular.',
     },
   };
 
   const maintenanceIntentLabel: Record<string, string> = {
-    stability:     '🧘 Estabilidade e Saúde',
+    stability: '🧘 Estabilidade e Saúde',
     recomposition: '🔄 Recomposição Corporal',
-    preserve:      '🏆 Preservar Resultado',
-    performance:   '⚡ Manter Desempenho',
+    preserve: '🏆 Preservar Resultado',
+    performance: '⚡ Manter Desempenho',
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center p-20">
+        <div className="text-center">
+          <div className="animate-spin w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+          <p className={`text-sm font-bold uppercase tracking-widest ${currentTheme.subtext}`}>Carregando Protocolo...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 w-full max-w-2xl mx-auto p-4">
 
       {/* FORMULÁRIO */}
       <div className={`p-8 rounded-3xl border-2 shadow-2xl backdrop-blur-sm ${currentTheme.border} bg-black/10`}>
-        
-        {/* Título Centralizado */}
+
         <div className="flex flex-col items-center gap-3 mb-10 border-b pb-6 border-white/10 w-full">
           <div className="bg-emerald-500/20 p-3 rounded-full">
             <User className="text-emerald-500" size={32} />
@@ -139,7 +201,6 @@ export function UserProfileComponent({ currentTheme }: { currentTheme: any }) {
                 className={`w-full p-4 rounded-2xl bg-black/30 border ${currentTheme.border} ${currentTheme.text} outline-none focus:border-emerald-500 transition-colors`}
                 value={profile.name} onChange={e => setProfile({...profile, name: e.target.value})} />
             </label>
-
             <div className="grid grid-cols-2 gap-3">
               <label>
                 <span className="text-[10px] font-black uppercase text-gray-500 ml-2">Idade</span>
@@ -156,7 +217,6 @@ export function UserProfileComponent({ currentTheme }: { currentTheme: any }) {
                 </select>
               </label>
             </div>
-
             <div className="grid grid-cols-2 gap-3">
               <label>
                 <span className="text-[10px] font-black uppercase text-gray-500 ml-2">Peso (kg)</span>
@@ -186,7 +246,6 @@ export function UserProfileComponent({ currentTheme }: { currentTheme: any }) {
                 <option value="very_active">Atleta (2x dia)</option>
               </select>
             </label>
-
             <label className="block">
               <span className="text-[10px] font-black uppercase text-gray-500 ml-2">Objetivo Principal</span>
               <select className={`w-full p-4 rounded-2xl bg-black/30 border ${currentTheme.border} ${currentTheme.text} outline-none appearance-none`}
@@ -196,8 +255,6 @@ export function UserProfileComponent({ currentTheme }: { currentTheme: any }) {
                 <option value="gain">💪 Ganhar Massa (Hipertrofia)</option>
               </select>
             </label>
-
-            {/* Intenção de manutenção — aparece apenas quando objetivo = manutenção */}
             {profile.goal === 'maintenance' && (
               <label className="block">
                 <span className="text-[10px] font-black uppercase text-gray-500 ml-2">Intenção de Manutenção</span>
@@ -212,8 +269,6 @@ export function UserProfileComponent({ currentTheme }: { currentTheme: any }) {
                 </select>
               </label>
             )}
-
-            {/* Destaque visual do objetivo após calcular */}
             {calculatedGoal && goalConfig[calculatedGoal] && (
               <div className={`p-4 rounded-2xl border-2 ${goalConfig[calculatedGoal].bg} ${goalConfig[calculatedGoal].border} transition-all`}>
                 <p className={`text-lg font-black ${goalConfig[calculatedGoal].color}`}>
@@ -232,13 +287,12 @@ export function UserProfileComponent({ currentTheme }: { currentTheme: any }) {
           </div>
         </div>
 
-        {/* Botão */}
         <button onClick={calculateAndSave}
           className={`w-full mt-8 p-5 font-black rounded-2xl transition-all uppercase tracking-widest flex items-center justify-center gap-2 shadow-xl
-            ${saved 
-              ? 'bg-green-500 shadow-green-500/20' 
+            ${saved
+              ? 'bg-green-500 shadow-green-500/20'
               : 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/20'}`}>
-          {saved 
+          {saved
             ? <><CheckCircle size={20} /> Protocolo Salvo!</>
             : <><Calculator size={20} /> Calcular Meu Protocolo</>}
         </button>
@@ -249,14 +303,12 @@ export function UserProfileComponent({ currentTheme }: { currentTheme: any }) {
         <div className={`p-8 rounded-3xl border-2 shadow-2xl ${currentTheme.border} bg-emerald-500/5`}>
           <div className="text-center mb-6">
             <p className="text-[11px] font-black text-gray-500 uppercase tracking-widest mb-1">
-              {goalConfig[calculatedGoal ?? ''].label} — Meta Diária
+              {goalConfig[calculatedGoal ?? '']?.label} — Meta Diária
             </p>
             <p className="text-6xl font-black text-emerald-500">
               {results.target.toFixed(0)} <span className="text-xl text-gray-400">kcal</span>
             </p>
           </div>
-
-          {/* Macros */}
           <div className="grid grid-cols-3 gap-3 mb-6">
             <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-center">
               <p className="text-[10px] font-black text-red-400 uppercase mb-1">Proteína</p>
@@ -274,8 +326,6 @@ export function UserProfileComponent({ currentTheme }: { currentTheme: any }) {
               <p className="text-[9px] text-gray-500">{(results.fat * 9).toFixed(0)} kcal</p>
             </div>
           </div>
-
-          {/* TMB e TDEE */}
           <div className="grid grid-cols-2 gap-3">
             <div className="p-4 rounded-2xl bg-black/20 border border-white/5 text-center">
               <p className="text-[10px] font-bold text-gray-500 uppercase">Basal (TMB)</p>
@@ -286,7 +336,6 @@ export function UserProfileComponent({ currentTheme }: { currentTheme: any }) {
               <p className={`text-lg font-bold ${currentTheme.text}`}>{results.tdee.toFixed(0)} kcal</p>
             </div>
           </div>
-
           <p className="text-center text-[10px] text-gray-600 mt-4 uppercase tracking-widest">
             ✅ Protocolo salvo — os módulos de Nutrição e Água já foram atualizados
           </p>

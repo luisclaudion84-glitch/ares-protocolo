@@ -7,8 +7,6 @@ import { loadProfile } from '../lib/profileStorage';
 import { getDietSuggestions } from '~/lib/dietSuggestions';
 import { supabase } from '../lib/supabase';
 
-// ─── TIPOS ───────────────────────────────────────────────────────────────────
-
 interface FoodItemExtended extends FoodItem {
   unit_type: 'g' | 'un';
   unit_weight?: number;
@@ -20,8 +18,6 @@ interface LogEntry extends FoodItemExtended {
   dbId?: string;
   amount: number;
 }
-
-// ─── MAPEAMENTO DE UNIDADES ───────────────────────────────────────────────────
 
 const UNIT_FOODS: Record<string, { unit_weight: number }> = {
   'ovo': { unit_weight: 50 },
@@ -39,15 +35,9 @@ const UNIT_FOODS: Record<string, { unit_weight: number }> = {
 };
 
 function enrichFood(food: FoodItem, overrideUnitType?: 'g' | 'un'): FoodItemExtended {
-  const key = Object.keys(UNIT_FOODS).find(k =>
-    food.name.toLowerCase().includes(k)
-  );
+  const key = Object.keys(UNIT_FOODS).find(k => food.name.toLowerCase().includes(k));
   if (key) {
-    return {
-      ...food,
-      unit_type: overrideUnitType || 'un',
-      unit_weight: UNIT_FOODS[key].unit_weight,
-    };
+    return { ...food, unit_type: overrideUnitType || 'un', unit_weight: UNIT_FOODS[key].unit_weight };
   }
   return { ...food, unit_type: overrideUnitType || 'g' };
 }
@@ -57,8 +47,6 @@ function effectiveGrams(food: FoodItemExtended, qty: number): number {
   return qty;
 }
 
-// ─── COMPONENTE ───────────────────────────────────────────────────────────────
-
 export default function NutritionTracker({ currentTheme }: { currentTheme: any }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -66,12 +54,8 @@ export default function NutritionTracker({ currentTheme }: { currentTheme: any }
   const [showGuide, setShowGuide] = useState(false);
   const [loading, setLoading] = useState(true);
   const [customFoods, setCustomFoods] = useState<FoodItemExtended[]>([]);
-
-  // Alimento selecionado para adicionar
   const [selectedFood, setSelectedFood] = useState<FoodItemExtended | null>(null);
   const [selectedAmount, setSelectedAmount] = useState<number>(1);
-
-  // Formulário manual
   const [mName, setMName] = useState('');
   const [mKcal, setMKcal] = useState('');
   const [mProt, setMProt] = useState('');
@@ -80,7 +64,6 @@ export default function NutritionTracker({ currentTheme }: { currentTheme: any }
   const [mUnitType, setMUnitType] = useState<'g' | 'un'>('g');
   const [mUnitWeight, setMUnitWeight] = useState('');
 
-  // Perfil e metas
   const savedProfile = loadProfile();
   const targetCalories = savedProfile?.targetCalories || 0;
   const targetProtein = savedProfile?.targetProtein || 0;
@@ -93,12 +76,18 @@ export default function NutritionTracker({ currentTheme }: { currentTheme: any }
   useEffect(() => {
     async function load() {
       setLoading(true);
+
+      // Busca user_id do usuário logado
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setLoading(false); return; }
+
       const today = new Date().toISOString().split('T')[0];
 
-      // Registros do dia
+      // Registros do dia filtrados por user_id
       const { data: logsData } = await supabase
         .from('nutrition_logs')
         .select('*')
+        .eq('user_id', user.id)          // ← filtro por usuário
         .eq('logged_on', today)
         .order('created_at', { ascending: false });
 
@@ -120,10 +109,11 @@ export default function NutritionTracker({ currentTheme }: { currentTheme: any }
         })));
       }
 
-      // Alimentos personalizados salvos
+      // Alimentos personalizados filtrados por user_id
       const { data: customData } = await supabase
         .from('custom_foods')
         .select('*')
+        .eq('user_id', user.id)          // ← filtro por usuário
         .order('created_at', { ascending: false });
 
       if (customData) {
@@ -146,7 +136,7 @@ export default function NutritionTracker({ currentTheme }: { currentTheme: any }
     load();
   }, []);
 
-  // ─── BUSCA (TACO + PERSONALIZADOS) ───────────────────────────────────────
+  // ─── BUSCA ────────────────────────────────────────────────────────────────
 
   const filteredFoods = useMemo(() => {
     if (!searchTerm) return [];
@@ -154,25 +144,20 @@ export default function NutritionTracker({ currentTheme }: { currentTheme: any }
       .filter(f => f.name.toLowerCase().includes(searchTerm.toLowerCase()))
       .slice(0, 4)
       .map(f => enrichFood(f));
-
     const customResults = customFoods
       .filter(f => f.name.toLowerCase().includes(searchTerm.toLowerCase()))
       .slice(0, 2);
-
-    const tacoWithPrefix = tacoResults.map(f => ({ ...f, id: `taco-${f.id}` }));
-    const customWithPrefix = customResults.map(f => ({ ...f, id: `custom-${f.id}` }));
-    return [...customWithPrefix, ...tacoWithPrefix];
+    return [
+      ...customResults.map(f => ({ ...f, id: `custom-${f.id}` })),
+      ...tacoResults.map(f => ({ ...f, id: `taco-${f.id}` })),
+    ];
   }, [searchTerm, customFoods]);
-
-  // ─── SELECIONAR ALIMENTO ──────────────────────────────────────────────────
 
   function selectFood(food: FoodItemExtended) {
     setSelectedFood(food);
     setSelectedAmount(food.unit_type === 'un' ? 1 : 100);
     setSearchTerm('');
   }
-
-  // ─── PREVIEW DE MACROS ────────────────────────────────────────────────────
 
   const preview = useMemo(() => {
     if (!selectedFood) return null;
@@ -190,52 +175,52 @@ export default function NutritionTracker({ currentTheme }: { currentTheme: any }
   // ─── CONFIRMAR ADIÇÃO ─────────────────────────────────────────────────────
 
   async function confirmAdd() {
-  if (!selectedFood || !preview) return;
-  const today = new Date().toISOString().split('T')[0];
+    if (!selectedFood || !preview) return;
 
-  const entry: LogEntry = {
-    ...selectedFood,
-    instanceId: crypto.randomUUID(),
-    amount: selectedAmount,
-  };
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
 
-  setLogs(prev => [entry, ...prev]);
-  setSelectedFood(null);
+    const today = new Date().toISOString().split('T')[0];
+    const entry: LogEntry = { ...selectedFood, instanceId: crypto.randomUUID(), amount: selectedAmount };
 
-  const payload = {
-    food_name: selectedFood.name,
-    calories: Number(preview.kcal),
-    protein: Number(preview.protein),
-    carbs: Number(preview.carbs),
-    fat: Number(preview.fat),
-    serving_size: selectedAmount,
-    unit_type: selectedFood.unit_type,
-    unit_weight: selectedFood.unit_weight || null,
-    logged_on: today,
-  };
+    setLogs(prev => [entry, ...prev]);
+    setSelectedFood(null);
 
-  console.log('Enviando para Supabase:', payload);
+    const payload = {
+      user_id: user.id,                  // ← user_id vinculado
+      food_name: selectedFood.name,
+      calories: Number(preview.kcal),
+      protein: Number(preview.protein),
+      carbs: Number(preview.carbs),
+      fat: Number(preview.fat),
+      serving_size: selectedAmount,
+      unit_type: selectedFood.unit_type,
+      unit_weight: selectedFood.unit_weight || null,
+      logged_on: today,
+    };
 
-  const { data, error } = await supabase
-    .from('nutrition_logs')
-    .insert([payload])
-    .select()
-    .single();
+    const { data, error } = await supabase
+      .from('nutrition_logs')
+      .insert([payload])
+      .select()
+      .single();
 
-  if (error) {
-    console.error('Erro Supabase:', error.message, error.details, error.hint);
-  } else {
-    console.log('Salvo com sucesso:', data);
-    setLogs(prev =>
-      prev.map(l => l.instanceId === entry.instanceId ? { ...l, dbId: data.id } : l)
-    );
+    if (error) {
+      console.error('Erro Supabase:', error.message, error.details, error.hint);
+    } else {
+      setLogs(prev =>
+        prev.map(l => l.instanceId === entry.instanceId ? { ...l, dbId: data.id } : l)
+      );
+    }
   }
-}
 
   // ─── ADICIONAR MANUAL ─────────────────────────────────────────────────────
 
   async function addManualFood() {
     if (!mName || !mKcal) return;
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
 
     const food: FoodItemExtended = {
       id: 'manual-' + Date.now(),
@@ -250,8 +235,8 @@ export default function NutritionTracker({ currentTheme }: { currentTheme: any }
       isCustom: true,
     };
 
-    // Salva no banco de alimentos personalizados
     await supabase.from('custom_foods').insert([{
+      user_id: user.id,                  // ← user_id vinculado
       food_name: food.name,
       calories: food.calories,
       protein: food.protein,
@@ -375,7 +360,6 @@ export default function NutritionTracker({ currentTheme }: { currentTheme: any }
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-
           {filteredFoods.length > 0 && (
             <div className={`absolute top-full left-0 right-0 mt-2 rounded-2xl border-2 shadow-2xl z-50 overflow-hidden backdrop-blur-md bg-gray-900/95 ${currentTheme.border}`}>
               {filteredFoods.map(food => (
@@ -404,7 +388,6 @@ export default function NutritionTracker({ currentTheme }: { currentTheme: any }
             </div>
           )}
         </div>
-
         <button
           onClick={() => setShowManual(true)}
           className={`flex items-center justify-center gap-2 p-4 rounded-2xl border-2 border-dashed ${currentTheme.border} ${currentTheme.text} hover:bg-white/5 transition-all text-sm font-bold`}
@@ -413,9 +396,9 @@ export default function NutritionTracker({ currentTheme }: { currentTheme: any }
         </button>
       </div>
 
-      {/* CARD DE CONFIRMAÇÃO DO ALIMENTO SELECIONADO */}
+      {/* CARD DE CONFIRMAÇÃO */}
       {selectedFood && preview && (
-        <div className={`p-5 rounded-2xl border-2 border-emerald-500/50 bg-emerald-500/5 space-y-4`}>
+        <div className="p-5 rounded-2xl border-2 border-emerald-500/50 bg-emerald-500/5 space-y-4">
           <div className="flex justify-between items-start">
             <div>
               <p className={`font-black text-lg ${currentTheme.text}`}>{selectedFood.name}</p>
@@ -425,8 +408,6 @@ export default function NutritionTracker({ currentTheme }: { currentTheme: any }
             </div>
             <button onClick={() => setSelectedFood(null)} className="text-gray-500 hover:text-white"><X size={18} /></button>
           </div>
-
-          {/* Seletor de quantidade */}
           <div className="flex items-center gap-4">
             <div className={`flex items-center gap-3 flex-1 p-3 rounded-xl border ${currentTheme.border} bg-black/20`}>
               <button
@@ -449,8 +430,6 @@ export default function NutritionTracker({ currentTheme }: { currentTheme: any }
               {selectedFood.unit_type === 'un' ? 'un' : 'g'}
             </span>
           </div>
-
-          {/* Preview de macros */}
           <div className="grid grid-cols-4 gap-2">
             {[
               { label: 'Kcal', val: preview.kcal, color: 'text-blue-400' },
@@ -464,13 +443,11 @@ export default function NutritionTracker({ currentTheme }: { currentTheme: any }
               </div>
             ))}
           </div>
-
           {selectedFood.unit_type === 'un' && (
             <p className="text-[10px] text-gray-500 text-center font-bold">
               {selectedAmount} unidade{selectedAmount > 1 ? 's' : ''} = {preview.grams}g efetivos
             </p>
           )}
-
           <button
             onClick={confirmAdd}
             className="w-full p-4 bg-emerald-500 hover:bg-emerald-600 text-white font-black rounded-xl transition-all shadow-lg shadow-emerald-500/20 uppercase tracking-widest flex items-center justify-center gap-2"
@@ -496,8 +473,6 @@ export default function NutritionTracker({ currentTheme }: { currentTheme: any }
                 value={mName}
                 onChange={e => setMName(e.target.value)}
               />
-
-              {/* Tipo de medida */}
               <div>
                 <p className="text-[10px] text-gray-500 font-bold uppercase mb-2">Como esse alimento é medido?</p>
                 <div className="flex gap-3">
@@ -512,7 +487,6 @@ export default function NutritionTracker({ currentTheme }: { currentTheme: any }
                   ))}
                 </div>
               </div>
-
               {mUnitType === 'un' && (
                 <input
                   type="number"
@@ -522,7 +496,6 @@ export default function NutritionTracker({ currentTheme }: { currentTheme: any }
                   onChange={e => setMUnitWeight(e.target.value)}
                 />
               )}
-
               <p className="text-[10px] text-gray-500 font-bold uppercase">
                 Macros {mUnitType === 'un' ? 'por unidade' : 'por 100g'}
               </p>

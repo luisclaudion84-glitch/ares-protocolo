@@ -43,18 +43,42 @@ export function BodyComposition({ currentTheme }: { currentTheme: any }) {
     fetchHistory();
   }, []);
 
-  async function fetchHistory() {
-    const { data } = await supabase
-      .from('body_measurements')
-      .select('*')
-      .order('date', { ascending: true })
-      .limit(10);
+async function fetchHistory() {
+  const { data: { user } } = await supabase.auth.getUser();
 
-    if (data) setHistory(data);
+  if (!user) {
+    setHistory([]);
+    return;
   }
 
-  const handleSave = async () => {
-    await supabase.from('body_measurements').insert([{
+  const { data, error } = await supabase
+    .from('body_measurements')
+    .select('*')
+    .eq('user_id', user.id)
+    .order('date', { ascending: true })
+    .limit(10);
+
+  if (error) {
+    console.error('Erro ao carregar histórico corporal:', error.message);
+    return;
+  }
+
+  if (data) {
+    setHistory(data);
+  }
+}
+const handleSave = async () => {
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
+    console.error('Usuário não autenticado ao salvar medidas.');
+    return;
+  }
+
+  const { error } = await supabase
+    .from('body_measurements')
+    .insert([{
+      user_id: user.id,
       date: measure.date,
       weight: measure.weight,
       chest: measure.chest,
@@ -63,11 +87,16 @@ export function BodyComposition({ currentTheme }: { currentTheme: any }) {
       thigh: measure.thigh,
       calf: measure.calf,
     }]);
-    setSaved(true);
-    fetchHistory();
-    setTimeout(() => setSaved(false), 2000);
-  };
 
+  if (error) {
+    console.error('Erro ao salvar medidas:', error.message);
+    return;
+  }
+
+  setSaved(true);
+  await fetchHistory();
+  setTimeout(() => setSaved(false), 2000);
+};
   const evolution = history.length >= 2
     ? (() => {
         const first = history[0][activeMetric];

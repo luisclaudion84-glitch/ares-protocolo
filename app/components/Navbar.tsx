@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Swords, Palette, Sun, Moon, X, LayoutDashboard, Droplets, Utensils, Dumbbell, TrendingUp } from 'lucide-react';
+import { Swords, Palette, Sun, Moon, X, LayoutDashboard, Droplets, Utensils, Dumbbell, TrendingUp, LogOut } from 'lucide-react';
 import { themes, type Theme } from '../types/themes';
 
 interface NavbarProps {
@@ -7,9 +7,10 @@ interface NavbarProps {
   setActiveTab: (tab: string) => void;
   currentTheme: Theme;
   setTheme: (theme: Theme) => void;
+  onLogout: () => void; //
 }
 
-export function Navbar({ activeTab, setActiveTab, currentTheme, setTheme }: NavbarProps) {
+export function Navbar({ activeTab, setActiveTab, currentTheme, setTheme, onLogout }: NavbarProps) {
   const [showThemes, setShowThemes] = useState(false);
 
   const menuItems = [
@@ -74,6 +75,14 @@ export function Navbar({ activeTab, setActiveTab, currentTheme, setTheme }: Navb
             >
               {isDark ? <Sun size={18} /> : <Moon size={18} />}
             </button>
+
+            <button
+  onClick={onLogout}
+  className={`p-2 rounded-lg transition-all text-red-400 hover:bg-red-500/20`}
+  title="Sair"
+>
+  <LogOut size={18} />
+</button>
           </div>
 
         </div>

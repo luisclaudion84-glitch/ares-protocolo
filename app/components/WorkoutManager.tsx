@@ -1,44 +1,22 @@
+// app/components/WorkoutManager.tsx
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Dumbbell,
-  ChevronDown,
-  ChevronUp,
-  RotateCcw,
-  CheckCircle2,
-  Save,
-  Clock,
-  Activity,
-  Moon,
-  Brain,
-  MessageSquare
+  Dumbbell, ChevronDown, ChevronUp, RotateCcw,
+  CheckCircle2, Clock, Activity, Moon, Brain, MessageSquare
 } from 'lucide-react';
 import {
-  initialWorkouts,
-  getTotalSets,
-  type Workout,
-  type Exercise,
-  type EquipmentType,
+  initialWorkouts, getTotalSets,
+  type Workout, type Exercise, type EquipmentType,
 } from '../data/workoutData';
 import type { Theme } from '../types/themes';
 import { supabase } from '../lib/supabase';
 
-interface WorkoutManagerProps {
-  currentTheme: Theme;
-}
-
+interface WorkoutManagerProps { currentTheme: Theme; }
 interface SetRecord {
-  weight: string;
-  reps: string;
-  duration_minutes?: number;
-  zone_2_minutes?: number;
-  completed?: boolean;
+  weight: string; reps: string;
+  duration_minutes?: number; zone_2_minutes?: number; completed?: boolean;
 }
-
-interface ExerciseRecord {
-  equipment: EquipmentType;
-  sets: SetRecord[];
-}
-
+interface ExerciseRecord { equipment: EquipmentType; sets: SetRecord[]; }
 type WorkoutRecords = Record<string, ExerciseRecord>;
 
 export function WorkoutManager({ currentTheme }: WorkoutManagerProps) {
@@ -47,8 +25,6 @@ export function WorkoutManager({ currentTheme }: WorkoutManagerProps) {
   const [expandedExerciseId, setExpandedExerciseId] = useState<string | null>(null);
   const [records, setRecords] = useState<WorkoutRecords>({});
   const [loading, setLoading] = useState(false);
-
-  // Estados de Contexto (Opcionais)
   const [sleepQuality, setSleepQuality] = useState<number>(3);
   const [readiness, setReadiness] = useState<number>(3);
   const [sessionRpe, setSessionRpe] = useState<number>(5);
@@ -57,15 +33,20 @@ export function WorkoutManager({ currentTheme }: WorkoutManagerProps) {
   const activeWorkout = initialWorkouts.find((w) => w.id === activeWorkoutId) || initialWorkouts[0];
   const isLight = currentTheme.id === 'light';
 
-  // --- 1. GESTÃO DE SESSÃO NO SUPABASE ---
+  // --- 1. GESTÃO DE SESSÃO ---
   const initSession = useCallback(async (workoutId: string) => {
     setLoading(true);
     try {
-      // Busca sessão aberta do mesmo treino nas últimas 12h
+      // Busca user_id do usuário logado
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setLoading(false); return; }
+
+      // Busca sessão aberta do mesmo treino para este usuário
       const { data: existing } = await supabase
         .from('workout_sessions')
         .select('*')
         .eq('workout_id', workoutId)
+        .eq('user_id', user.id)          // ← filtro por usuário
         .is('completed_at', null)
         .order('created_at', { ascending: false })
         .limit(1)
@@ -73,11 +54,11 @@ export function WorkoutManager({ currentTheme }: WorkoutManagerProps) {
 
       if (existing) {
         setSessionId(existing.id);
-        // Carregar séries já salvas
         const { data: savedRecords } = await supabase
           .from('exercise_records')
           .select('*')
-          .eq('session_id', existing.id);
+          .eq('session_id', existing.id)
+          .eq('user_id', user.id);        // ← filtro por usuário
 
         if (savedRecords) {
           const newRecords: WorkoutRecords = {};
@@ -96,16 +77,20 @@ export function WorkoutManager({ currentTheme }: WorkoutManagerProps) {
           setRecords(newRecords);
         }
       } else {
-        // Cria nova sessão
+        // Cria nova sessão com user_id
         const { data: newSession, error } = await supabase
           .from('workout_sessions')
-          .insert([{ workout_id: workoutId, performed_at: new Date().toISOString() }])
+          .insert([{
+            workout_id: workoutId,
+            user_id: user.id,             // ← user_id vinculado
+            performed_at: new Date().toISOString()
+          }])
           .select()
           .single();
 
         if (error) throw error;
         setSessionId(newSession.id);
-        setRecords({}); // Limpa local para novo treino
+        setRecords({});
       }
     } catch (err) {
       console.error("Erro ao iniciar sessão:", err);
@@ -122,8 +107,12 @@ export function WorkoutManager({ currentTheme }: WorkoutManagerProps) {
   async function upsertSet(exercise: Exercise, setIndex: number, data: SetRecord) {
     if (!sessionId) return;
 
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
     const record = {
       session_id: sessionId,
+      user_id: user.id,                  // ← user_id vinculado
       exercise_id: exercise.id,
       set_index: setIndex + 1,
       equipment: records[exercise.id]?.equipment || exercise.defaultEquipment,
@@ -145,10 +134,8 @@ export function WorkoutManager({ currentTheme }: WorkoutManagerProps) {
       equipment: exercise.defaultEquipment,
       sets: Array.from({ length: exercise.sets }, () => ({ weight: '', reps: '' }))
     };
-
     const updatedSets = [...currentEx.sets];
     updatedSets[index] = { ...updatedSets[index], [field]: value };
-
     setRecords(prev => ({ ...prev, [exercise.id]: { ...currentEx, sets: updatedSets } }));
   }
 
@@ -157,6 +144,10 @@ export function WorkoutManager({ currentTheme }: WorkoutManagerProps) {
     if (!sessionId) return;
     try {
       setLoading(true);
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
       const { error } = await supabase
         .from('workout_sessions')
         .update({
@@ -165,15 +156,16 @@ export function WorkoutManager({ currentTheme }: WorkoutManagerProps) {
           pre_workout_readiness: readiness,
           session_rpe: sessionRpe,
           notes: notes,
-          actual_duration_minutes: 60 // Idealmente calculado por timer futuramente
+          actual_duration_minutes: 60
         })
-        .eq('id', sessionId);
+        .eq('id', sessionId)
+        .eq('user_id', user.id);         // ← garante que só o dono finaliza
 
       if (error) throw error;
       alert('Sessão finalizada e consolidada no histórico! ⚔️');
       setSessionId(null);
       setRecords({});
-      window.location.reload(); // Reset simples
+      window.location.reload();
     } catch (err) {
       alert('Erro ao finalizar sessão.');
     } finally {
@@ -184,8 +176,6 @@ export function WorkoutManager({ currentTheme }: WorkoutManagerProps) {
   const getExerciseRecord = (exercise: Exercise): ExerciseRecord => {
     const saved = records[exercise.id];
     if (saved) {
-      // Garante que o número de sets sempre bate com o workoutData
-      // Preenche sets faltantes caso o banco tenha retornado menos séries
       const sets = Array.from({ length: exercise.sets }, (_, i) =>
         saved.sets[i] ?? { weight: '', reps: '' }
       );
@@ -267,21 +257,16 @@ export function WorkoutManager({ currentTheme }: WorkoutManagerProps) {
                     {record.sets.map((set, idx) => (
                       <div key={idx} className="grid grid-cols-4 gap-2 items-center">
                         <span className="text-xs font-bold text-slate-500 uppercase">Série {idx + 1}</span>
-
                         {!isLISS ? (
                           <>
                             <input
-                              type="number"
-                              placeholder="Carga"
-                              value={set.weight}
+                              type="number" placeholder="Carga" value={set.weight}
                               onChange={(e) => handleSetChange(exercise, idx, 'weight', e.target.value)}
                               onBlur={() => upsertSet(exercise, idx, set)}
                               className={`p-2 rounded-lg text-center text-xs border ${isLight ? 'bg-white' : 'bg-slate-800 border-slate-700 text-white'}`}
                             />
                             <input
-                              type="text"
-                              placeholder="Reps"
-                              value={set.reps}
+                              type="text" placeholder="Reps" value={set.reps}
                               onChange={(e) => handleSetChange(exercise, idx, 'reps', e.target.value)}
                               onBlur={() => upsertSet(exercise, idx, set)}
                               className={`p-2 rounded-lg text-center text-xs border ${isLight ? 'bg-white' : 'bg-slate-800 border-slate-700 text-white'}`}
@@ -290,17 +275,13 @@ export function WorkoutManager({ currentTheme }: WorkoutManagerProps) {
                         ) : (
                           <>
                             <input
-                              type="number"
-                              placeholder="Min Totais"
-                              value={set.duration_minutes || ''}
+                              type="number" placeholder="Min Totais" value={set.duration_minutes || ''}
                               onChange={(e) => handleSetChange(exercise, idx, 'duration_minutes', parseInt(e.target.value))}
                               onBlur={() => upsertSet(exercise, idx, set)}
                               className="p-2 rounded-lg text-center text-xs bg-slate-800 border-slate-700 text-white"
                             />
                             <input
-                              type="number"
-                              placeholder="Min Zona 2"
-                              value={set.zone_2_minutes || ''}
+                              type="number" placeholder="Min Zona 2" value={set.zone_2_minutes || ''}
                               onChange={(e) => handleSetChange(exercise, idx, 'zone_2_minutes', parseInt(e.target.value))}
                               onBlur={() => upsertSet(exercise, idx, set)}
                               className="p-2 rounded-lg text-center text-xs bg-slate-800 border-slate-700 text-white border-emerald-500/30"
@@ -308,7 +289,7 @@ export function WorkoutManager({ currentTheme }: WorkoutManagerProps) {
                           </>
                         )}
                         <div className="flex justify-end">
-                           <CheckCircle2 size={16} className={set.weight || set.duration_minutes ? 'text-emerald-500' : 'text-slate-600'} />
+                          <CheckCircle2 size={16} className={set.weight || set.duration_minutes ? 'text-emerald-500' : 'text-slate-600'} />
                         </div>
                       </div>
                     ))}
@@ -319,13 +300,11 @@ export function WorkoutManager({ currentTheme }: WorkoutManagerProps) {
           })}
         </div>
 
-        {/* MÉTRIQUES DE PERFORMANCE ( CONTEXTO ) */}
+        {/* CONTEXTO DA SESSÃO */}
         <div className={`mt-8 p-4 rounded-2xl border ${currentTheme.border} ${isLight ? 'bg-slate-50' : 'bg-slate-900/20'}`}>
           <h4 className={`text-xs font-black uppercase tracking-widest mb-4 flex items-center gap-2 ${currentTheme.text}`}>
-            <Activity size={14} className="text-emerald-500" />
-            Contexto da Sessão
+            <Activity size={14} className="text-emerald-500" /> Contexto da Sessão
           </h4>
-
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="space-y-1">
               <label className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1">
@@ -346,7 +325,6 @@ export function WorkoutManager({ currentTheme }: WorkoutManagerProps) {
               <input type="range" min="1" max="10" value={sessionRpe} onChange={(e) => setSessionRpe(parseInt(e.target.value))} className="w-full h-1 bg-slate-700 rounded-lg accent-emerald-500" />
             </div>
           </div>
-
           <div className="mt-4">
             <label className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1 mb-1">
               <MessageSquare size={10} /> Observações Contextuais
