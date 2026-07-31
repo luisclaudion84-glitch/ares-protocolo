@@ -1,120 +1,143 @@
-import { useState } from 'react';
-import { Swords, Palette, Sun, Moon, X, LayoutDashboard, Droplets, Utensils, Dumbbell, TrendingUp, LogOut } from 'lucide-react';
-import { themes, type Theme } from '../types/themes';
+// app/components/Navbar.tsx
+import React, { useEffect, useState } from 'react';
+import { Menu, X, Sun, Moon, User2, LogOut } from 'lucide-react';
+import { supabase } from '../lib/supabase'; // use caminho relativo como no resto do projeto
+
+type ThemeShape = {
+  id?: string;
+  card?: string;
+  border?: string;
+  text?: string;
+  subtext?: string;
+};
 
 interface NavbarProps {
-  activeTab: string;
-  setActiveTab: (tab: string) => void;
-  currentTheme: Theme;
-  setTheme: (theme: Theme) => void;
-  onLogout: () => void; //
+  currentTheme?: ThemeShape;
+  onToggleTheme?: () => void;
+  onLogout?: () => Promise<void> | void;
+  showFullTitle?: boolean;
 }
 
-export function Navbar({ activeTab, setActiveTab, currentTheme, setTheme, onLogout }: NavbarProps) {
-  const [showThemes, setShowThemes] = useState(false);
+export function Navbar({ currentTheme = {}, onToggleTheme, onLogout, showFullTitle = false }: NavbarProps) {
+  const [open, setOpen] = useState(false);
+  const [userName, setUserName] = useState<string | null>(null);
+  const [loadingUser, setLoadingUser] = useState(true);
 
-  const menuItems = [
-    { id: 'dash', label: 'Início', icon: LayoutDashboard },
-    { id: 'water', label: 'Água', icon: Droplets },
-    { id: 'nutri', label: 'Nutrição', icon: Utensils },
-    { id: 'treino', label: 'Treino', icon: Dumbbell },
-    { id: 'evolucao', label: 'Evolução', icon: TrendingUp },
-  ];
+  useEffect(() => {
+    let mounted = true;
+    async function loadUser() {
+      setLoadingUser(true);
+      try {
+        const { data } = await supabase.auth.getUser();
+        if (!mounted) return;
+        setUserName(data?.user?.email ?? data?.user?.user_metadata?.name ?? null);
+      } catch (e) {
+        console.warn('Erro ao buscar usuário:', e);
+        if (mounted) setUserName(null);
+      } finally {
+        if (mounted) setLoadingUser(false);
+      }
+    }
+    loadUser();
+    return () => { mounted = false; };
+  }, []);
 
-  const isDark = currentTheme.id !== 'light';
+  const handleLogout = async () => {
+    try {
+      if (onLogout) {
+        await onLogout();
+      } else {
+        await supabase.auth.signOut();
+        // redirecionamento simples: volta para raiz
+        window.location.href = '/';
+      }
+    } catch (err) {
+      console.error('Erro ao deslogar:', err);
+    } finally {
+      setOpen(false);
+    }
+  };
+
+  const isDark = !(currentTheme?.card?.includes('white') || currentTheme?.card?.includes('gray-100') || currentTheme?.card?.includes('slate-100'));
 
   return (
-    <>
-      <nav className={`fixed top-0 left-0 w-full z-50 border-b transition-colors duration-500 ${currentTheme.nav}`}>
-        <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
-
-          {/* Logo */}
-          <div className="flex items-center gap-2 shrink-0">
-            <div className="bg-emerald-500/20 p-1.5 rounded-lg">
-              <Swords className="text-emerald-400" size={20} />
+    <header className={`w-full z-40 sticky top-0 ${currentTheme.card ?? 'bg-white'} ${currentTheme.border ?? 'border-b'} transition-colors`}>
+      <div className="max-w-6xl mx-auto px-3 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-14 sm:h-16">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="rounded-full bg-emerald-500/10 p-2">
+              <span className="text-emerald-500 font-black select-none">A</span>
             </div>
-            <h1 className="text-xl font-black italic tracking-tighter uppercase leading-none">
-  <span className={`${currentTheme.id === 'light' ? 'text-slate-800' : 'text-white'} border-b-2 border-emerald-400 pb-0.5`}>
-    Protocolo
-  </span>
-  <span className="text-emerald-400 ml-1">Ares</span>
-</h1>
+
+            <div className="min-w-0">
+              <a href="/" onClick={() => setOpen(false)} className="flex items-baseline gap-2">
+                <span className={`text-sm font-black tracking-tight truncate max-w-[160px] ${showFullTitle ? 'inline-block' : 'hidden sm:inline-block'}`} style={{ letterSpacing: '-0.02em' }}>
+                  PROTOCOLO ARES
+                </span>
+                <span className={`text-xs font-bold text-gray-400 ${showFullTitle ? 'hidden sm:inline-block' : 'sm:hidden'}`}>Ares</span>
+              </a>
+            </div>
           </div>
 
-          {/* Menu Items */}
-          <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide">
-            {menuItems.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => setActiveTab(item.id)}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${
-                  activeTab === item.id
-                    ? 'bg-emerald-600 text-white shadow-lg'
-                    : `${currentTheme.subtext} hover:bg-white/10`
-                }`}
-              >
-                <item.icon size={16} />
-                <span className="hidden sm:inline">{item.label}</span>
+          <nav className="hidden sm:flex items-center gap-3">
+            <a href="/dashboard" className="px-3 py-2 rounded-lg text-xs font-bold hover:opacity-90">Dashboard</a>
+            <a href="/nutrition" className="px-3 py-2 rounded-lg text-xs font-bold hover:opacity-90">Nutrição</a>
+            <a href="/training" className="px-3 py-2 rounded-lg text-xs font-bold hover:opacity-90">Treino</a>
+            <a href="/profile" className="px-3 py-2 rounded-lg text-xs font-bold hover:opacity-90">Perfil</a>
+          </nav>
+
+          <div className="flex items-center gap-2">
+            <button onClick={() => { onToggleTheme?.(); setOpen(false); }} className="p-2 rounded-md hover:bg-black/5" aria-label="Alternar tema" title="Alternar tema">
+              {currentTheme?.id === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+
+            <div className="hidden sm:flex items-center gap-3">
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg">
+                <User2 size={18} />
+                <span className="text-sm font-bold truncate max-w-[120px]">
+                  {loadingUser ? 'Carregando...' : (userName ?? 'Usuário')}
+                </span>
+              </div>
+              <button onClick={handleLogout} className="px-3 py-2 rounded-lg bg-rose-500 text-white text-sm font-black hover:opacity-90 flex items-center gap-2" title="Sair">
+                <LogOut size={16} /> Sair
               </button>
-            ))}
-          </div>
+            </div>
 
-          {/* Botões Tema e Dark/Light */}
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={() => setShowThemes(!showThemes)}
-              className={`p-2 rounded-lg transition-all ${currentTheme.subtext} hover:bg-white/10`}
-              title="Temas"
-            >
-              <Palette size={18} />
+            <button className="sm:hidden p-2 rounded-md" onClick={() => setOpen(o => !o)} aria-expanded={open} aria-label={open ? 'Fechar menu' : 'Abrir menu'}>
+              {open ? <X size={20} /> : <Menu size={20} />}
             </button>
-            <button
-              onClick={() => setTheme(isDark ? themes.find(t => t.id === 'light')! : themes.find(t => t.id === 'dark')!)}
-              className={`p-2 rounded-lg transition-all ${currentTheme.subtext} hover:bg-white/10`}
-              title="Modo Claro/Escuro"
-            >
-              {isDark ? <Sun size={18} /> : <Moon size={18} />}
-            </button>
-
-            <button
-  onClick={onLogout}
-  className={`p-2 rounded-lg transition-all text-red-400 hover:bg-red-500/20`}
-  title="Sair"
->
-  <LogOut size={18} />
-</button>
-          </div>
-
-        </div>
-      </nav>
-
-      {/* Painel de Temas */}
-      {showThemes && (
-        <div className={`fixed top-16 right-4 z-50 rounded-xl border shadow-2xl p-4 w-56 ${currentTheme.card} ${currentTheme.border}`}>
-          <div className="flex items-center justify-between mb-3">
-            <p className={`text-xs font-bold uppercase tracking-wider ${currentTheme.subtext}`}>Escolha um Tema</p>
-            <button onClick={() => setShowThemes(false)} className={currentTheme.subtext}>
-              <X size={14} />
-            </button>
-          </div>
-          <div className="space-y-2">
-            {themes.map(t => (
-              <button
-                key={t.id}
-                onClick={() => { setTheme(t); setShowThemes(false); }}
-                className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all border ${
-                  currentTheme.id === t.id
-                    ? 'border-emerald-500 bg-emerald-500/20 text-emerald-400 font-bold'
-                    : `${currentTheme.border} ${currentTheme.subtext} hover:bg-white/10`
-                }`}
-              >
-                {t.name}
-                {currentTheme.id === t.id && <span className="ml-2 text-xs">✓ Ativo</span>}
-              </button>
-            ))}
           </div>
         </div>
-      )}
-    </>
+      </div>
+
+      <div className={`sm:hidden transition-[max-height] duration-200 ease-in-out overflow-hidden ${open ? 'max-h-96' : 'max-h-0'}`}>
+        <div className={`px-4 pb-4 pt-2 border-t ${currentTheme.border ?? 'border-t'} ${currentTheme.card ?? 'bg-white'}`}>
+          <div className="flex flex-col gap-3">
+            <a href="/dashboard" onClick={() => setOpen(false)} className="w-full text-left px-3 py-2 rounded-lg font-bold">Dashboard</a>
+            <a href="/nutrition" onClick={() => setOpen(false)} className="w-full text-left px-3 py-2 rounded-lg font-bold">Nutrição</a>
+            <a href="/training" onClick={() => setOpen(false)} className="w-full text-left px-3 py-2 rounded-lg font-bold">Treino</a>
+            <a href="/profile" onClick={() => setOpen(false)} className="w-full text-left px-3 py-2 rounded-lg font-bold">Perfil</a>
+
+            <div className="border-t pt-3">
+              <button onClick={() => { onToggleTheme?.(); setOpen(false); }} className="w-full text-left px-3 py-2 rounded-lg flex items-center gap-2">
+                {currentTheme?.id === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+                <span className="font-bold">Alternar tema</span>
+              </button>
+
+              <div className="mt-3 flex items-center gap-2">
+                <User2 size={18} />
+                <span className="font-bold truncate">{loadingUser ? 'Carregando...' : (userName ?? 'Usuário')}</span>
+              </div>
+
+              <button onClick={handleLogout} className="w-full mt-3 px-3 py-2 rounded-lg bg-rose-500 text-white font-black flex items-center justify-center gap-2">
+                <LogOut size={16} /> Sair
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
   );
 }
+
+export default Navbar;
