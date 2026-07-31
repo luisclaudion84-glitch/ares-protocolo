@@ -1,0 +1,123 @@
+// app/components/Navbar.tsx
+import React, { useState } from 'react';
+import { Menu, X, Sun, Moon, User2, LogOut } from 'lucide-react';
+import Link from '@remix-run/react'; // ou react-router / seu roteador se não for Next.js
+
+interface NavbarProps {
+  currentTheme?: any;
+  onToggleTheme?: () => void;
+  onLogout?: () => void;
+  userName?: string | null;
+}
+
+export function Navbar({ currentTheme, onToggleTheme, onLogout, userName }: NavbarProps) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <header className={`w-full z-40 ${currentTheme?.card || 'bg-white'} ${currentTheme?.border || 'border-b'} sticky top-0`}>
+      <div className="max-w-6xl mx-auto px-3 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-14 sm:h-16">
+          {/* Left: logo + title */}
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="flex items-center shrink-0">
+              <div className="rounded-full bg-emerald-500/10 p-2">
+                {/* Substitua por seu componente de logo */}
+                <span className="text-emerald-500 font-black">A</span>
+              </div>
+            </div>
+            <div className="min-w-0">
+              <Link href="/" className="flex items-baseline gap-2">
+                <span className="text-sm font-black tracking-tight truncate max-w-[160px] hidden sm:inline-block">
+                  PROTOCOLO ARES
+                </span>
+                <span className="text-xs font-bold text-gray-400 sm:hidden">Ares</span>
+              </Link>
+            </div>
+          </div>
+
+          {/* Center: nav links (desktop) */}
+          <nav className="hidden sm:flex items-center gap-3">
+            <Link href="/dashboard" className="px-3 py-2 rounded-lg text-xs font-bold hover:opacity-90">Dashboard</Link>
+            <Link href="/nutrition" className="px-3 py-2 rounded-lg text-xs font-bold hover:opacity-90">Nutrição</Link>
+            <Link href="/training" className="px-3 py-2 rounded-lg text-xs font-bold hover:opacity-90">Treino</Link>
+            <Link href="/profile" className="px-3 py-2 rounded-lg text-xs font-bold hover:opacity-90">Perfil</Link>
+          </nav>
+
+          {/* Right: actions */}
+          <div className="flex items-center gap-2">
+            {/* Theme toggle (icon visible always, text visible on sm+) */}
+            <button
+              onClick={onToggleTheme}
+              className="p-2 rounded-md hover:bg-black/5"
+              aria-label="Alternar tema"
+            >
+              {/* Troque a lógica de ícone conforme seu tema */}
+              {currentTheme?.id === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+              <span className="sr-only">Alternar tema</span>
+            </button>
+
+            {/* User info + logout on desktop */}
+            <div className="hidden sm:flex items-center gap-3">
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg">
+                <User2 size={18} />
+                <span className="text-sm font-bold truncate max-w-[120px]">{userName ?? 'Usuário'}</span>
+              </div>
+              <button
+                onClick={onLogout}
+                className="px-3 py-2 rounded-lg bg-rose-500 text-white text-sm font-black hover:opacity-90 flex items-center gap-2"
+              >
+                <LogOut size={16} /> Sair
+              </button>
+            </div>
+
+            {/* Hamburger (mobile) */}
+            <button
+              className="sm:hidden p-2 rounded-md"
+              onClick={() => setOpen(o => !o)}
+              aria-expanded={open}
+              aria-label={open ? 'Fechar menu' : 'Abrir menu'}
+            >
+              {open ? <X size={20} /> : <Menu size={20} />}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Mobile menu (drawer abaixo do header) */}
+      <div className={`sm:hidden transition-max-h duration-200 ease-in-out overflow-hidden ${open ? 'max-h-96' : 'max-h-0'}`}>
+        <div className={`px-4 pb-4 pt-2 border-t ${currentTheme?.border || 'border-t'} ${currentTheme?.card || 'bg-white'}`}>
+          <div className="flex flex-col gap-3">
+            <Link href="/dashboard" onClick={() => setOpen(false)} className="w-full text-left px-3 py-2 rounded-lg font-bold">Dashboard</Link>
+            <Link href="/nutrition" onClick={() => setOpen(false)} className="w-full text-left px-3 py-2 rounded-lg font-bold">Nutrição</Link>
+            <Link href="/training" onClick={() => setOpen(false)} className="w-full text-left px-3 py-2 rounded-lg font-bold">Treino</Link>
+            <Link href="/profile" onClick={() => setOpen(false)} className="w-full text-left px-3 py-2 rounded-lg font-bold">Perfil</Link>
+
+            <div className="border-t pt-3">
+              <button
+                onClick={() => { onToggleTheme?.(); setOpen(false); }}
+                className="w-full text-left px-3 py-2 rounded-lg flex items-center gap-2"
+              >
+                {currentTheme?.id === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+                <span className="font-bold">Alternar tema</span>
+              </button>
+
+              <div className="mt-2 flex items-center gap-2">
+                <User2 size={18} />
+                <span className="font-bold truncate">{userName ?? 'Usuário'}</span>
+              </div>
+
+              <button
+                onClick={() => { onLogout?.(); setOpen(false); }}
+                className="w-full mt-3 px-3 py-2 rounded-lg bg-rose-500 text-white font-black flex items-center justify-center gap-2"
+              >
+                <LogOut size={16} /> Sair
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+export default Navbar;
