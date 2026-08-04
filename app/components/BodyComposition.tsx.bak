@@ -1,12 +1,4 @@
 // app/components/BodyComposition.tsx
-// Mudanças aplicadas (responsividade / overflow):
-// - grid inputs -> mobile-first (grid-cols-1 sm:grid-cols-2 md:grid-cols-3)
-// - InputField: min-w-0, w-full, label truncate
-// - Gráfico envolto em wrapper com overflow-x-auto para evitar scroll horizontal global
-// - Selector de métricas: grid-cols-2 (mobile) -> sm:grid-cols-3
-// - Mantive toda lógica de fetch/save e compatibilidade com currentTheme.
-// Substitua o arquivo atual por este conteúdo (backup recomendado).
-
 import React, { useState, useEffect } from 'react';
 import { Ruler, Save, History, TrendingDown } from 'lucide-react';
 import { supabase } from '../lib/supabase';
@@ -49,65 +41,62 @@ export function BodyComposition({ currentTheme }: { currentTheme: any }) {
 
   useEffect(() => {
     fetchHistory();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function fetchHistory() {
-    const { data: { user } } = await supabase.auth.getUser();
+async function fetchHistory() {
+  const { data: { user } } = await supabase.auth.getUser();
 
-    if (!user) {
-      setHistory([]);
-      return;
-    }
-
-    const { data, error } = await supabase
-      .from('body_measurements')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('date', { ascending: true })
-      .limit(10);
-
-    if (error) {
-      console.error('Erro ao carregar histórico corporal:', error.message ?? error);
-      return;
-    }
-
-    if (data) {
-      setHistory(data);
-    }
+  if (!user) {
+    setHistory([]);
+    return;
   }
 
-  const handleSave = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
+  const { data, error } = await supabase
+    .from('body_measurements')
+    .select('*')
+    .eq('user_id', user.id)
+    .order('date', { ascending: true })
+    .limit(10);
 
-    if (!user) {
-      console.error('Usuário não autenticado ao salvar medidas.');
-      return;
-    }
+  if (error) {
+    console.error('Erro ao carregar histórico corporal:', error.message);
+    return;
+  }
 
-    const { error } = await supabase
-      .from('body_measurements')
-      .insert([{
-        user_id: user.id,
-        date: measure.date,
-        weight: measure.weight,
-        chest: measure.chest,
-        waist: measure.waist,
-        biceps: measure.biceps,
-        thigh: measure.thigh,
-        calf: measure.calf,
-      }]);
+  if (data) {
+    setHistory(data);
+  }
+}
+const handleSave = async () => {
+  const { data: { user } } = await supabase.auth.getUser();
 
-    if (error) {
-      console.error('Erro ao salvar medidas:', error.message ?? error);
-      return;
-    }
+  if (!user) {
+    console.error('Usuário não autenticado ao salvar medidas.');
+    return;
+  }
 
-    setSaved(true);
-    await fetchHistory();
-    setTimeout(() => setSaved(false), 2000);
-  };
+  const { error } = await supabase
+    .from('body_measurements')
+    .insert([{
+      user_id: user.id,
+      date: measure.date,
+      weight: measure.weight,
+      chest: measure.chest,
+      waist: measure.waist,
+      biceps: measure.biceps,
+      thigh: measure.thigh,
+      calf: measure.calf,
+    }]);
 
+  if (error) {
+    console.error('Erro ao salvar medidas:', error.message);
+    return;
+  }
+
+  setSaved(true);
+  await fetchHistory();
+  setTimeout(() => setSaved(false), 2000);
+};
   const evolution = history.length >= 2
     ? (() => {
         const first = history[0][activeMetric];
@@ -141,11 +130,11 @@ export function BodyComposition({ currentTheme }: { currentTheme: any }) {
   };
 
   const InputField = ({ label, value, field }: any) => (
-    <div className="space-y-1 min-w-0">
-      <span className="text-[10px] font-black uppercase text-gray-500 ml-2 truncate">{label}</span>
+    <div className="space-y-1">
+      <span className="text-[10px] font-black uppercase text-gray-500 ml-2">{label}</span>
       <input
         type="number"
-        className={`w-full p-4 rounded-2xl border outline-none focus:border-emerald-500 text-center font-bold min-w-0 ${currentTheme.border} ${currentTheme.card} ${currentTheme.text}`}
+        className={`w-full p-4 rounded-2xl border outline-none focus:border-emerald-500 text-center font-bold ${currentTheme.border} ${currentTheme.card} ${currentTheme.text}`}
         value={value}
         onChange={(e) => setMeasure({...measure, [field]: Number(e.target.value)})}
       />
@@ -153,7 +142,7 @@ export function BodyComposition({ currentTheme }: { currentTheme: any }) {
   );
 
   return (
-    <div className="w-full max-w-2xl mx-auto p-4 space-y-6 min-w-0">
+    <div className="w-full max-w-2xl mx-auto p-4 space-y-6">
 
       {/* ── FORMULÁRIO DE MEDIDAS ─────────────────────────────────────────────── */}
       <div className={`p-8 rounded-3xl border-2 shadow-2xl backdrop-blur-sm ${currentTheme.border} ${currentTheme.card}`}>
@@ -166,8 +155,7 @@ export function BodyComposition({ currentTheme }: { currentTheme: any }) {
           </h2>
         </div>
 
-        {/* Inputs: mobile-first grid (1 col on xs, 2 on sm, 3 on md+) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           <InputField label="Peso (kg)" value={measure.weight} field="weight" />
           <InputField label="Cintura (cm)" value={measure.waist} field="waist" />
           <InputField label="Peitoral (cm)" value={measure.chest} field="chest" />
@@ -189,15 +177,15 @@ export function BodyComposition({ currentTheme }: { currentTheme: any }) {
       {history.length > 0 && (
         <div className={`rounded-3xl p-6 border shadow-xl ${currentTheme.card} ${currentTheme.border}`}>
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3 min-w-0">
+            <div className="flex items-center gap-3">
               <div className="bg-emerald-500/20 p-2 rounded-full">
                 <TrendingDown className="text-emerald-400" size={22} />
               </div>
-              <div className="min-w-0">
-                <h3 className={`text-lg font-black uppercase italic tracking-tighter ${currentTheme.text} truncate`}>
+              <div>
+                <h3 className={`text-lg font-black uppercase italic tracking-tighter ${currentTheme.text}`}>
                   Evolução Corporal
                 </h3>
-                <p className={`text-[10px] font-bold ${currentTheme.subtext} truncate`}>
+                <p className={`text-[10px] font-bold ${currentTheme.subtext}`}>
                   {metricLabels[activeMetric].toUpperCase()} — ÚLTIMOS REGISTROS
                 </p>
               </div>
@@ -213,42 +201,38 @@ export function BodyComposition({ currentTheme }: { currentTheme: any }) {
             )}
           </div>
 
-          {/* Wrapping the chart in an overflow container to prevent global horizontal scroll on small screens */}
-          <div className="w-full overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-            <div className="min-w-[320px]"> {/* ensures chart has a minimum width but still scrolls if necessary */}
-              <ResponsiveContainer width="100%" height={220}>
-                <LineChart data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
-                  <XAxis dataKey="data" tick={{ fill: tickColor, fontSize: 10, fontWeight: 700 }} />
-                  <YAxis tick={{ fill: tickColor, fontSize: 10 }} domain={['auto', 'auto']} />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Line
-                    type="monotone"
-                    dataKey="valor"
-                    stroke={chartColors[activeMetric]}
-                    strokeWidth={3}
-                    dot={{ fill: chartColors[activeMetric], r: 5 }}
-                    activeDot={{ r: 7 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
+          {/* Gráfico */}
+          <ResponsiveContainer width="100%" height={220}>
+            <LineChart data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+              <XAxis dataKey="data" tick={{ fill: tickColor, fontSize: 10, fontWeight: 700 }} />
+              <YAxis tick={{ fill: tickColor, fontSize: 10 }} domain={['auto', 'auto']} />
+              <Tooltip content={<CustomTooltip />} />
+              <Line
+                type="monotone"
+                dataKey="valor"
+                stroke={chartColors[activeMetric]}
+                strokeWidth={3}
+                dot={{ fill: chartColors[activeMetric], r: 5 }}
+                activeDot={{ r: 7 }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
 
-          {/* Seletor de métrica — 2 col em telas muito pequenas, 3 a partir de sm */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-4">
+          {/* Seletor de métrica — grid 3x2 */}
+          <div className="grid grid-cols-3 gap-2 mt-4">
             {(['weight', 'waist', 'chest', 'biceps', 'thigh', 'calf'] as const).map(metric => (
               <button
                 key={metric}
                 onClick={() => setActiveMetric(metric)}
-                className={`p-3 rounded-2xl font-bold text-xs uppercase tracking-wider transition-all min-w-0
+                className={`p-3 rounded-2xl font-bold text-xs uppercase tracking-wider transition-all
                   ${activeMetric === metric
                     ? 'text-white shadow-lg'
                     : `${currentTheme.card} border ${currentTheme.border} ${currentTheme.subtext} hover:opacity-80`
                   }`}
                 style={activeMetric === metric ? { backgroundColor: chartColors[metric] } : {}}
               >
-                <span className="truncate block text-center">{metricLabels[metric].split(' ')[0]}</span>
+                {metricLabels[metric].split(' ')[0]}
               </button>
             ))}
           </div>
@@ -259,5 +243,3 @@ export function BodyComposition({ currentTheme }: { currentTheme: any }) {
     </div>
   );
 }
-
-export default BodyComposition;

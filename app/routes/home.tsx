@@ -57,7 +57,7 @@ export default function Home() {
   return (
     <div className={`min-h-screen transition-colors duration-500 ${currentTheme.bg} ${currentTheme.text}`}>
       <Navbar 
-        activeTab={activeTab}
+        ActiveTab={activeTab}
         setActiveTab={setActiveTab}
         currentTheme={currentTheme}
         setTheme={toggleTheme}
