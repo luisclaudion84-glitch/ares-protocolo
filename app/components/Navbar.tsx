@@ -1,3 +1,10 @@
+// app/components/Navbar.tsx
+// Atualizações:
+// - fallback local de alternância de tema quando `onToggleTheme` não é fornecido
+// - persiste escolha em localStorage ('ares_theme' = 'dark'|'light')
+// - sincroniza estado visual do botão em desktop e mobile
+// - mantém melhorias de responsividade e truncamento
+
 import React, { useEffect, useState } from 'react';
 import { Menu, X, Sun, Moon, User2, LogOut } from 'lucide-react';
 import { supabase } from '../lib/supabase';
@@ -17,6 +24,8 @@ interface NavbarProps {
   showFullTitle?: boolean;
 }
 
+const THEME_STORAGE_KEY = 'ares_theme'; // fallback localStorage key
+
 export function Navbar({
   currentTheme = {},
   onToggleTheme,
@@ -26,6 +35,16 @@ export function Navbar({
   const [open, setOpen] = useState(false);
   const [userName, setUserName] = useState<string | null>(null);
   const [loadingUser, setLoadingUser] = useState(true);
+
+  // local theme state used only as fallback when onToggleTheme not provided
+  const [localTheme, setLocalTheme] = useState<'light' | 'dark'>(() => {
+    try {
+      const saved = typeof window !== 'undefined' ? localStorage.getItem(THEME_STORAGE_KEY) : null;
+      return (saved === 'dark' ? 'dark' : 'light');
+    } catch {
+      return 'light';
+    }
+  });
 
   useEffect(() => {
     let mounted = true;
@@ -48,18 +67,45 @@ export function Navbar({
     };
   }, []);
 
-  // Bloqueia o scroll do body quando o menu mobile está aberto (evita deslocamentos e overflow)
+  // Apply local theme to document root when using fallback
+  useEffect(() => {
+    // only do this if parent isn't controlling theme via onToggleTheme/currentTheme
+    if (onToggleTheme) return;
+    try {
+      if (localTheme === 'dark') {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+      localStorage.setItem(THEME_STORAGE_KEY, localTheme);
+    } catch (e) {
+      // ignore storage/dom errors
+    }
+  }, [localTheme, onToggleTheme]);
+
+  // Block body scroll when mobile menu open
   useEffect(() => {
     const original = typeof document !== 'undefined' ? document.body.style.overflow : '';
-    if (open) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = original;
-    }
+    if (open) document.body.style.overflow = 'hidden';
+    else document.body.style.overflow = original;
     return () => {
       if (typeof document !== 'undefined') document.body.style.overflow = original;
     };
   }, [open]);
+
+  // Unified toggleTheme: call parent's handler if present; otherwise flip localTheme
+  const toggleTheme = () => {
+    if (onToggleTheme) {
+      try {
+        onToggleTheme();
+      } catch (e) {
+        console.warn('onToggleTheme threw:', e);
+      }
+    } else {
+      setLocalTheme((t) => (t === 'dark' ? 'light' : 'dark'));
+    }
+    setOpen(false); // close mobile menu if open
+  };
 
   const handleLogout = async () => {
     try {
@@ -76,12 +122,8 @@ export function Navbar({
     }
   };
 
-  const isDark =
-    !(
-      currentTheme?.card?.includes('white') ||
-      currentTheme?.card?.includes('gray-100') ||
-      currentTheme?.card?.includes('slate-100')
-    );
+  // Determine current visual theme for icon: prefer currentTheme.id, fallback to localTheme
+  const visualTheme = currentTheme?.id === 'dark' ? 'dark' : localTheme;
 
   return (
     <header
@@ -92,19 +134,14 @@ export function Navbar({
     >
       <div className="max-w-6xl mx-auto px-3 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-14 sm:h-16">
-          {/* Left: logo + title (min-w-0 to allow truncation) */}
+          {/* Left: logo + title */}
           <div className="flex items-center gap-3 min-w-0">
             <div className="rounded-full bg-emerald-500/10 p-2 flex-shrink-0">
               <span className="text-emerald-500 font-black select-none">A</span>
             </div>
 
             <div className="min-w-0">
-              <a
-                href="/"
-                onClick={() => setOpen(false)}
-                className="flex items-baseline gap-2 select-none"
-                aria-label="Ir para Início"
-              >
+              <a href="/" onClick={() => setOpen(false)} className="flex items-baseline gap-2 select-none" aria-label="Ir para Início">
                 <span
                   className={`text-sm font-black tracking-tight truncate max-w-[160px] ${
                     showFullTitle ? 'inline-block' : 'hidden sm:inline-block'
@@ -113,56 +150,38 @@ export function Navbar({
                 >
                   PROTOCOLO ARES
                 </span>
-                <span
-                  className={`text-xs font-bold text-gray-400 ${
-                    showFullTitle ? 'hidden sm:inline-block' : 'sm:hidden'
-                  }`}
-                >
-                  Ares
-                </span>
+                <span className={`text-xs font-bold text-gray-400 ${showFullTitle ? 'hidden sm:inline-block' : 'sm:hidden'}`}>Ares</span>
               </a>
             </div>
           </div>
 
-          {/* Center: nav links (desktop only) - min-w-0 so it doesn't force overflow */}
+          {/* Center: nav links */}
           <nav className="hidden sm:flex items-center gap-3 min-w-0" role="navigation" aria-label="Main navigation">
-            <a href="/dashboard" className="px-3 py-2 rounded-lg text-xs font-bold hover:opacity-90 whitespace-nowrap">
-              Dashboard
-            </a>
-            <a href="/nutrition" className="px-3 py-2 rounded-lg text-xs font-bold hover:opacity-90 whitespace-nowrap">
-              Nutrição
-            </a>
-            <a href="/training" className="px-3 py-2 rounded-lg text-xs font-bold hover:opacity-90 whitespace-nowrap">
-              Treino
-            </a>
-            <a href="/profile" className="px-3 py-2 rounded-lg text-xs font-bold hover:opacity-90 whitespace-nowrap">
-              Perfil
-            </a>
+            <a href="/dashboard" className="px-3 py-2 rounded-lg text-xs font-bold hover:opacity-90 whitespace-nowrap">Dashboard</a>
+            <a href="/nutrition" className="px-3 py-2 rounded-lg text-xs font-bold hover:opacity-90 whitespace-nowrap">Nutrição</a>
+            <a href="/training" className="px-3 py-2 rounded-lg text-xs font-bold hover:opacity-90 whitespace-nowrap">Treino</a>
+            <a href="/profile" className="px-3 py-2 rounded-lg text-xs font-bold hover:opacity-90 whitespace-nowrap">Perfil</a>
           </nav>
 
-          {/* Right: actions (theme, user, logout, hamburger) */}
+          {/* Right: actions */}
           <div className="flex items-center gap-2 min-w-0">
             <button
-              onClick={() => {
-                onToggleTheme?.();
-                setOpen(false);
-              }}
+              type="button"
+              onClick={toggleTheme}
               className="p-2 rounded-md hover:bg-black/5"
               aria-label="Alternar tema"
               title="Alternar tema"
             >
-              {currentTheme?.id === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+              {visualTheme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
             </button>
 
-            {/* Desktop user + logout */}
             <div className="hidden sm:flex items-center gap-3 min-w-0">
               <div className="flex items-center gap-2 px-3 py-2 rounded-lg min-w-0">
                 <User2 size={18} />
-                <span className="text-sm font-bold truncate max-w-[120px]">
-                  {loadingUser ? 'Carregando...' : userName ?? 'Usuário'}
-                </span>
+                <span className="text-sm font-bold truncate max-w-[120px]">{loadingUser ? 'Carregando...' : userName ?? 'Usuário'}</span>
               </div>
               <button
+                type="button"
                 onClick={handleLogout}
                 className="px-3 py-2 rounded-lg bg-rose-500 text-white text-sm font-black hover:opacity-90 flex items-center gap-2"
                 title="Sair"
@@ -171,8 +190,8 @@ export function Navbar({
               </button>
             </div>
 
-            {/* Hamburger (mobile) */}
             <button
+              type="button"
               className="sm:hidden p-2 rounded-md"
               onClick={() => setOpen((o) => !o)}
               aria-expanded={open}
@@ -193,44 +212,20 @@ export function Navbar({
       >
         <div className={`px-4 pb-4 pt-2 border-t ${currentTheme.border ?? 'border-t'} ${currentTheme.card ?? 'bg-white'}`}>
           <div className="flex flex-col gap-3">
-            <a
-              href="/dashboard"
-              onClick={() => setOpen(false)}
-              className="w-full text-left px-3 py-2 rounded-lg font-bold"
-            >
-              Dashboard
-            </a>
-            <a
-              href="/nutrition"
-              onClick={() => setOpen(false)}
-              className="w-full text-left px-3 py-2 rounded-lg font-bold"
-            >
-              Nutrição
-            </a>
-            <a
-              href="/training"
-              onClick={() => setOpen(false)}
-              className="w-full text-left px-3 py-2 rounded-lg font-bold"
-            >
-              Treino
-            </a>
-            <a
-              href="/profile"
-              onClick={() => setOpen(false)}
-              className="w-full text-left px-3 py-2 rounded-lg font-bold"
-            >
-              Perfil
-            </a>
+            <a href="/dashboard" onClick={() => setOpen(false)} className="w-full text-left px-3 py-2 rounded-lg font-bold">Dashboard</a>
+            <a href="/nutrition" onClick={() => setOpen(false)} className="w-full text-left px-3 py-2 rounded-lg font-bold">Nutrição</a>
+            <a href="/training" onClick={() => setOpen(false)} className="w-full text-left px-3 py-2 rounded-lg font-bold">Treino</a>
+            <a href="/profile" onClick={() => setOpen(false)} className="w-full text-left px-3 py-2 rounded-lg font-bold">Perfil</a>
 
             <div className="border-t pt-3">
               <button
+                type="button"
                 onClick={() => {
-                  onToggleTheme?.();
-                  setOpen(false);
+                  toggleTheme();
                 }}
                 className="w-full text-left px-3 py-2 rounded-lg flex items-center gap-2"
               >
-                {currentTheme?.id === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+                {visualTheme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
                 <span className="font-bold">Alternar tema</span>
               </button>
 
@@ -239,10 +234,7 @@ export function Navbar({
                 <span className="font-bold truncate">{loadingUser ? 'Carregando...' : userName ?? 'Usuário'}</span>
               </div>
 
-              <button
-                onClick={handleLogout}
-                className="w-full mt-3 px-3 py-2 rounded-lg bg-rose-500 text-white font-black flex items-center justify-center gap-2"
-              >
+              <button type="button" onClick={handleLogout} className="w-full mt-3 px-3 py-2 rounded-lg bg-rose-500 text-white font-black flex items-center justify-center gap-2">
                 <LogOut size={16} /> Sair
               </button>
             </div>
