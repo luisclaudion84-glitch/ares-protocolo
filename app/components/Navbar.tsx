@@ -1,6 +1,6 @@
 // app/components/Navbar.tsx
 import React, { useEffect, useState, useRef } from 'react';
-import { Menu, X, Swords, LogOut, ChevronDown, Sun, Moon, Shield, Waves } from 'lucide-react';
+import { Swords, LogOut, ChevronDown, Sun, Moon, Shield, Waves } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { themes, type Theme } from '../types/themes';
 
@@ -37,6 +37,11 @@ const NAV_ITEMS = [
   { id: 'evolucao', label: 'Evolução' },
 ];
 
+function getFirstName(fullName: string | null): string {
+  if (!fullName) return '';
+  return fullName.split(' ')[0];
+}
+
 export function Navbar({
   currentTheme,
   setTheme,
@@ -46,7 +51,6 @@ export function Navbar({
   ActiveTab,
   setActiveTab,
 }: NavbarProps) {
-  const [open, setOpen] = useState(false);
   const [themeOpen, setThemeOpen] = useState(false);
   const [loadingUser, setLoadingUser] = useState(true);
   const [userName, setUserName] = useState<string | null>(null);
@@ -93,25 +97,13 @@ export function Navbar({
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
-  useEffect(() => {
-    if (typeof document === 'undefined') return;
-    const original = document.body.style.overflow || '';
-    if (open) document.body.style.overflow = 'hidden';
-    else document.body.style.overflow = original;
-    return () => {
-      document.body.style.overflow = original;
-    };
-  }, [open]);
-
   const handleNavClick = (id: string) => {
     setActiveTab?.(id);
-    setOpen(false);
   };
 
   const handleThemeSelect = (theme: Theme) => {
     setTheme?.(theme);
     setThemeOpen(false);
-    setOpen(false);
   };
 
   const handleLogout = async () => {
@@ -124,59 +116,54 @@ export function Navbar({
       }
     } catch (err) {
       console.error('Erro ao deslogar:', err);
-    } finally {
-      setOpen(false);
     }
   };
 
   const isActive = (id: string) => ActiveTab === id;
 
-  const navBaseClasses = "px-3 py-2 rounded-lg text-xs font-bold transition-colors whitespace-nowrap cursor-pointer";
+  const navBaseClasses = "px-2 sm:px-3 py-2 rounded-lg text-[10px] sm:text-xs font-bold transition-colors whitespace-nowrap cursor-pointer flex-shrink-0";
   const navActiveClasses = "bg-emerald-500 text-white shadow-sm";
   const navInactiveClasses = "hover:bg-emerald-500/20 hover:text-emerald-500";
 
   const themeNav = currentTheme?.nav ?? 'bg-white border-emerald-100';
+  const firstName = getFirstName(userName);
+  const displayName = loadingUser ? '...' : (firstName || 'Usuário');
 
   return (
     <header
       className={`w-full z-40 sticky top-0 ${themeNav} border-b transition-colors`}
       role="banner"
     >
-      <div className="max-w-6xl mx-auto px-3 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-14 sm:h-16">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="rounded-full bg-emerald-500/10 p-2 flex-shrink-0">
-              <Swords size={20} className="text-emerald-500" />
+      <div className="max-w-6xl mx-auto px-2 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between h-14 sm:h-16 gap-2">
+          {/* Logo */}
+          <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+            <div className="rounded-full bg-emerald-500/10 p-1.5 sm:p-2">
+              <Swords size={18} className="text-emerald-500" />
             </div>
-
-            <div className="min-w-0">
-              <button
-                type="button"
-                onClick={() => handleNavClick('dash')}
-                className="flex flex-col items-start select-none bg-transparent border-none p-0"
-                aria-label="Ir para Início"
+            <button
+              type="button"
+              onClick={() => handleNavClick('dash')}
+              className="flex flex-col items-start select-none bg-transparent border-none p-0"
+              aria-label="Ir para Início"
+            >
+              <span
+                className={`text-xs sm:text-sm font-black tracking-tight truncate ${currentTheme?.text ?? 'text-slate-900'}`}
+                style={{ letterSpacing: '-0.02em' }}
               >
-                <span
-                  className={`text-sm font-black tracking-tight truncate max-w-[160px] ${
-                    showFullTitle ? 'inline-block' : 'hidden sm:inline-block'
-                  } ${currentTheme?.text ?? 'text-slate-900'}`}
-                  style={{ letterSpacing: '-0.02em' }}
-                >
-                  PROTOCOLO ARES
-                </span>
-                <span className="w-full mt-0.5 border-b-2 border-emerald-500 rounded-sm" />
-                <span
-                  className={`text-xs font-bold text-gray-400 ${
-                    showFullTitle ? 'hidden sm:inline-block' : 'sm:hidden'
-                  }`}
-                >
-                  Ares
-                </span>
-              </button>
-            </div>
+                PROTOCOLO ARES
+              </span>
+              <span className="w-full mt-0.5 border-b-2 border-emerald-500 rounded-sm" />
+            </button>
           </div>
 
-          <nav className="hidden sm:flex items-center gap-3 min-w-0" role="navigation" aria-label="Main navigation">
+          {/* Abas - Scroll horizontal no mobile, flex normal no desktop */}
+          <nav 
+            className="flex items-center gap-1 sm:gap-2 overflow-x-auto" 
+            role="navigation" 
+            aria-label="Main navigation"
+            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+          >
             {NAV_ITEMS.map((item) => (
               <button
                 key={item.id}
@@ -191,14 +178,14 @@ export function Navbar({
             ))}
           </nav>
 
-          <div className="flex items-center gap-2 min-w-0">
+          {/* Ações: Tema + Usuário + Logout */}
+          <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+            {/* Seletor de Tema */}
             <div className="relative z-50" ref={themeRef}>
               <button
                 type="button"
                 onClick={() => setThemeOpen(o => !o)}
-                className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md hover:bg-emerald-500/10 transition-colors text-sm font-bold select-none bg-transparent border-none ${
-                  currentTheme?.text ?? 'text-slate-900'
-                }`}
+                className={`flex items-center gap-1 px-1.5 sm:px-2 py-1.5 rounded-md hover:bg-emerald-500/10 transition-colors text-sm font-bold select-none bg-transparent border-none ${currentTheme?.text ?? 'text-slate-900'}`}
                 aria-expanded={themeOpen}
                 aria-label="Selecionar tema"
                 title="Selecionar tema"
@@ -230,110 +217,27 @@ export function Navbar({
               )}
             </div>
 
-            <div className="hidden sm:flex items-center gap-3 min-w-0">
-              <div className="flex items-center gap-2 px-3 py-2 rounded-lg min-w-0">
-                <div className="w-7 h-7 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center text-xs font-bold">
-                  {(userName || userEmail || 'U').split(' ').map(s => s[0]).slice(0, 2).join('').toUpperCase()}
-                </div>
-                <span
-                  className={`text-sm font-bold truncate max-w-[120px] ${
-                    currentTheme?.text ?? 'text-slate-900'
-                  }`}
-                >
-                  {loadingUser ? 'Carregando...' : userName ?? (userEmail ?? 'Usuário')}
-                </span>
+            {/* Identificação do Usuário - Apenas Primeiro Nome */}
+            <div className="hidden sm:flex items-center gap-2 min-w-0">
+              <div className="w-7 h-7 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                {displayName.charAt(0).toUpperCase()}
               </div>
-
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="px-3 py-2 rounded-lg bg-rose-500 text-white text-sm font-black hover:opacity-90 flex items-center gap-2 transition-opacity border-none cursor-pointer"
-                title="Sair"
-                data-testid="logout-desktop"
-              >
-                <LogOut size={16} /> <span className="hidden md:inline">Sair</span>
-              </button>
+              <span className={`text-sm font-bold truncate max-w-[80px] ${currentTheme?.text ?? 'text-slate-900'}`}>
+                {displayName}
+              </span>
             </div>
 
+            {/* Botão Sair */}
             <button
               type="button"
-              className="sm:hidden p-2 rounded-md bg-transparent border-none cursor-pointer"
-              onClick={() => setOpen((o) => !o)}
-              aria-expanded={open}
-              aria-controls="mobile-menu"
-              aria-label={open ? 'Fechar menu' : 'Abrir menu'}
-              data-testid="mobile-toggle"
+              onClick={handleLogout}
+              className="px-2 sm:px-3 py-2 rounded-lg bg-rose-500 text-white text-xs sm:text-sm font-black hover:opacity-90 flex items-center gap-1 transition-opacity border-none cursor-pointer flex-shrink-0"
+              title="Sair"
+              data-testid="logout-btn"
             >
-              {open ? <X size={20} /> : <Menu size={20} />}
+              <LogOut size={14} />
+              <span className="hidden sm:inline">Sair</span>
             </button>
-          </div>
-        </div>
-      </div>
-
-      <div
-        id="mobile-menu"
-        className={`sm:hidden transition-[max-height] duration-200 ease-in-out overflow-hidden ${
-          open ? 'max-h-[36rem]' : 'max-h-0'
-        }`}
-        aria-hidden={!open}
-      >
-        <div className={`px-4 pb-4 pt-2 border-t ${currentTheme?.border ?? 'border-slate-200'} ${currentTheme?.card ?? 'bg-white'}`}>
-          <div className="flex flex-col gap-3">
-            {NAV_ITEMS.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => handleNavClick(item.id)}
-                className={`w-full text-left px-3 py-2 rounded-lg font-bold transition-colors cursor-pointer bg-transparent border-none ${
-                  isActive(item.id)
-                    ? 'bg-emerald-500 text-white shadow-sm'
-                    : `hover:bg-emerald-500/20 hover:text-emerald-500 ${currentTheme?.text ?? 'text-slate-900'}`
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
-
-            <div className="border-t pt-3">
-              <p className={`text-xs font-bold uppercase tracking-wider mb-2 px-3 ${currentTheme?.subtext ?? 'text-slate-500'}`}>
-                Tema
-              </p>
-              <div className="flex flex-col gap-1">
-                {themes.map((theme) => (
-                  <button
-                    key={theme.id}
-                    type="button"
-                    onClick={() => handleThemeSelect(theme)}
-                    className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold transition-colors cursor-pointer bg-transparent border-none text-left ${
-                      currentTheme?.id === theme.id
-                        ? 'bg-emerald-500/20 text-emerald-500'
-                        : `hover:bg-emerald-500/10 ${currentTheme?.text ?? 'text-slate-900'}`
-                    }`}
-                  >
-                    {themeIcon(theme.id)}
-                    {theme.name}
-                  </button>
-                ))}
-              </div>
-
-              <div className="mt-3 flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center font-bold">
-                  {(userName || userEmail || 'U').split(' ').map(s => s[0]).slice(0, 2).join('').toUpperCase()}
-                </div>
-                <span className={`font-bold truncate ${currentTheme?.text ?? 'text-slate-900'}`}>
-                  {loadingUser ? 'Carregando...' : userName ?? (userEmail ?? 'Usuário')}
-                </span>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="w-full mt-3 px-3 py-2 rounded-lg bg-rose-500 text-white font-black flex items-center justify-center gap-2 hover:opacity-90 transition-opacity border-none cursor-pointer"
-                data-testid="logout-mobile"
-              >
-                <LogOut size={16} /> Sair
-              </button>
-            </div>
           </div>
         </div>
       </div>
