@@ -11,18 +11,16 @@ import { useAres } from "../hooks/useAres";
 import { supabase } from '../lib/supabase';
 
 export default function Home() {
-  const { activeTab, setActiveTab, currentTheme, toggleTheme } = useAres();
+  const { activeTab, setActiveTab, currentTheme, toggleTheme, setTheme } = useAres();
   const [session, setSession] = useState<any>(null);
   const [authChecked, setAuthChecked] = useState(false);
 
   useEffect(() => {
-    // Verifica se já existe uma sessão ativa
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setAuthChecked(true);
     });
 
-    // Escuta mudanças de login/logout em tempo real
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
     });
@@ -30,7 +28,6 @@ export default function Home() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Enquanto não verifica a sessão, mostra loading
   if (!authChecked) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-black/90 text-white">
@@ -42,25 +39,22 @@ export default function Home() {
     );
   }
 
-  //Função Logout 
   const handleLogout = async () => {
-    await supabase.auth.signOut()
-    setSession(null)
+    await supabase.auth.signOut();
+    setSession(null);
   };
-  
-  // Se não estiver logado, mostra apenas o modal de autenticação
+
   if (!session) {
     return <AuthModal currentTheme={currentTheme} onLogin={() => {}} />;
   }
 
-    // Usuário autenticado — renderiza o app completo
   return (
     <div className={`min-h-screen transition-colors duration-500 ${currentTheme.bg} ${currentTheme.text}`}>
       <Navbar 
         ActiveTab={activeTab}
         setActiveTab={setActiveTab}
         currentTheme={currentTheme}
-        setTheme={toggleTheme}
+        setTheme={setTheme}
         onLogout={handleLogout}
       />
 
