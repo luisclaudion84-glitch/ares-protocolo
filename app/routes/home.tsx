@@ -14,6 +14,12 @@ export default function Home() {
   const { activeTab, setActiveTab, currentTheme, toggleTheme, setTheme } = useAres();
   const [session, setSession] = useState<any>(null);
   const [authChecked, setAuthChecked] = useState(false);
+  
+  // Lógica de Swipe
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [touchEnd, setTouchEnd] = useState<number | null>(null);
+  const minSwipeDistance = 50;
+  const tabs = ['dash', 'water', 'nutri', 'treino', 'evolucao'];
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -27,6 +33,32 @@ export default function Home() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    setTouchEnd(null);
+    setTouchStart(e.targetTouches[0].clientX);
+  };
+
+  const onTouchMove = (e: React.TouchEvent) => {
+    setTouchEnd(e.targetTouches[0].clientX);
+  };
+
+  const onTouchEnd = () => {
+    if (!touchStart || !touchEnd) return;
+    const distance = touchStart - touchEnd;
+    const isLeftSwipe = distance > minSwipeDistance;
+    const isRightSwipe = distance < -minSwipeDistance;
+    const currentIndex = tabs.indexOf(activeTab);
+
+    if (isLeftSwipe && currentIndex < tabs.length - 1) {
+      setActiveTab(tabs[currentIndex + 1]);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    if (isRightSwipe && currentIndex > 0) {
+      setActiveTab(tabs[currentIndex - 1]);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
 
   if (!authChecked) {
     return (
@@ -49,7 +81,12 @@ export default function Home() {
   }
 
   return (
-    <div className={`min-h-screen transition-colors duration-500 ${currentTheme.bg} ${currentTheme.text}`}>
+    <div 
+      className={`min-h-screen transition-colors duration-500 ${currentTheme.bg} ${currentTheme.text}`}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+    >
       <Navbar 
         ActiveTab={activeTab}
         setActiveTab={setActiveTab}
