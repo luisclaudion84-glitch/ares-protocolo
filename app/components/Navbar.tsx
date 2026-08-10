@@ -31,6 +31,7 @@ const themeIcon = (themeId: string) => {
 
 const NAV_ITEMS = [
   { id: 'dash', label: 'Dashboard' },
+  { id: 'water', label: 'Água' },
   { id: 'nutri', label: 'Nutrição' },
   { id: 'treino', label: 'Treino' },
   { id: 'evolucao', label: 'Evolução' },
