@@ -25,6 +25,17 @@ export function UserProfileComponent({ currentTheme }: { currentTheme: any }) {
   // Referência para o scroll automático
   const resultsRef = useRef<HTMLDivElement>(null);
 
+  // Efeito de scroll: dispara APÓS o React renderizar os resultados
+  useEffect(() => {
+    if (results.target > 0 && resultsRef.current) {
+      // Pequeno delay para garantir que o layout estabilizou
+      const timer = setTimeout(() => {
+        resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [results.target]);
+
   useEffect(() => {
     async function loadFromSupabase() {
       const { data: { user } } = await supabase.auth.getUser();
@@ -111,12 +122,6 @@ export function UserProfileComponent({ currentTheme }: { currentTheme: any }) {
       });
 
       setSaved(true);
-      
-      // Scroll automático para os resultados
-      setTimeout(() => {
-        resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }, 100);
-
       setTimeout(() => setSaved(false), 3000);
     }
   };
@@ -138,49 +143,94 @@ export function UserProfileComponent({ currentTheme }: { currentTheme: any }) {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-4">
-           {/* Campos de Input (Nome, Idade, Peso...) - Mantidos idênticos ao original */}
            <div className="space-y-4">
-              <input value={profile.name} onChange={e => setProfile({...profile, name: e.target.value})} placeholder="Seu nome..." className={`w-full p-4 rounded-2xl bg-black/30 border ${currentTheme.border} ${currentTheme.text}`} />
+              <label className="block">
+                <span className="text-[10px] font-black uppercase text-gray-500 ml-2">Nome Completo</span>
+                <input value={profile.name} onChange={e => setProfile({...profile, name: e.target.value})} placeholder="Seu nome..." className={`w-full p-4 rounded-2xl bg-black/30 border ${currentTheme.border} ${currentTheme.text} outline-none focus:border-emerald-500 transition-colors`} />
+              </label>
               <div className="grid grid-cols-2 gap-3">
-                <input type="number" value={profile.age} onChange={e => setProfile({...profile, age: Number(e.target.value)})} className={`w-full p-4 rounded-2xl bg-black/30 border ${currentTheme.border} text-center`} />
-                <select value={profile.gender} onChange={e => setProfile({...profile, gender: e.target.value as any})} className={`w-full p-4 rounded-2xl bg-black/30 border ${currentTheme.border} ${currentTheme.text}`}>
-                  <option value="male">Masculino</option>
-                  <option value="female">Feminino</option>
-                </select>
+                <label>
+                  <span className="text-[10px] font-black uppercase text-gray-500 ml-2">Idade</span>
+                  <input type="number" value={profile.age} onChange={e => setProfile({...profile, age: Number(e.target.value)})} className={`w-full p-4 rounded-2xl bg-black/30 border ${currentTheme.border} ${currentTheme.text} text-center font-bold`} />
+                </label>
+                <label>
+                  <span className="text-[10px] font-black uppercase text-gray-500 ml-2">Sexo</span>
+                  <select value={profile.gender} onChange={e => setProfile({...profile, gender: e.target.value as any})} className={`w-full p-4 rounded-2xl bg-black/30 border ${currentTheme.border} ${currentTheme.text} outline-none appearance-none`}>
+                    <option value="male">Masculino</option>
+                    <option value="female">Feminino</option>
+                  </select>
+                </label>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <input type="number" value={profile.weight} onChange={e => setProfile({...profile, weight: Number(e.target.value)})} className={`w-full p-4 rounded-2xl bg-black/30 border ${currentTheme.border} text-center`} />
-                <input type="number" value={profile.height} onChange={e => setProfile({...profile, height: Number(e.target.value)})} className={`w-full p-4 rounded-2xl bg-black/30 border ${currentTheme.border} text-center`} />
+                <label>
+                  <span className="text-[10px] font-black uppercase text-gray-500 ml-2">Peso (kg)</span>
+                  <input type="number" value={profile.weight} onChange={e => setProfile({...profile, weight: Number(e.target.value)})} className={`w-full p-4 rounded-2xl bg-black/30 border ${currentTheme.border} ${currentTheme.text} text-center font-bold`} />
+                </label>
+                <label>
+                  <span className="text-[10px] font-black uppercase text-gray-500 ml-2">Altura (cm)</span>
+                  <input type="number" value={profile.height} onChange={e => setProfile({...profile, height: Number(e.target.value)})} className={`w-full p-4 rounded-2xl bg-black/30 border ${currentTheme.border} ${currentTheme.text} text-center font-bold`} />
+                </label>
               </div>
            </div>
            <div className="space-y-4">
-              <select value={profile.activityLevel} onChange={e => setProfile({...profile, activityLevel: e.target.value})} className={`w-full p-4 rounded-2xl bg-black/30 border ${currentTheme.border} ${currentTheme.text}`}>
-                <option value="sedentary">Sedentário</option>
-                <option value="light">Leve</option>
-                <option value="moderate">Moderado</option>
-                <option value="active">Ativo</option>
-                <option value="very_active">Atleta</option>
-              </select>
-              <select value={profile.goal} onChange={e => setProfile({...profile, goal: e.target.value})} className={`w-full p-4 rounded-2xl bg-black/30 border ${currentTheme.border} ${currentTheme.text}`}>
-                <option value="loss">Perder Gordura</option>
-                <option value="maintenance">Manutenção</option>
-                <option value="gain">Ganhar Massa</option>
-              </select>
+              <label className="block">
+                <span className="text-[10px] font-black uppercase text-gray-500 ml-2">Nível de Atividade</span>
+                <select value={profile.activityLevel} onChange={e => setProfile({...profile, activityLevel: e.target.value})} className={`w-full p-4 rounded-2xl bg-black/30 border ${currentTheme.border} ${currentTheme.text} outline-none appearance-none`}>
+                  <option value="sedentary">Sedentário</option>
+                  <option value="light">Leve</option>
+                  <option value="moderate">Moderado</option>
+                  <option value="active">Ativo</option>
+                  <option value="very_active">Atleta</option>
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-[10px] font-black uppercase text-gray-500 ml-2">Objetivo Principal</span>
+                <select value={profile.goal} onChange={e => setProfile({...profile, goal: e.target.value})} className={`w-full p-4 rounded-2xl bg-black/30 border ${currentTheme.border} ${currentTheme.text} outline-none appearance-none`}>
+                  <option value="loss">🔥 Perder Gordura</option>
+                  <option value="maintenance">⚖️ Manutenção</option>
+                  <option value="gain">💪 Ganhar Massa</option>
+                </select>
+              </label>
            </div>
         </div>
 
-        <button onClick={calculateAndSave} className={`w-full mt-8 p-5 font-black rounded-2xl transition-all uppercase flex items-center justify-center gap-2 ${saved ? 'bg-green-500' : 'bg-emerald-500 hover:bg-emerald-600'}`}>
-          {saved ? <><CheckCircle size={20} /> Salvo!</> : <><Calculator size={20} /> Calcular Meu Protocolo</>}
+        <button onClick={calculateAndSave} className={`w-full mt-8 p-5 font-black rounded-2xl transition-all uppercase tracking-widest flex items-center justify-center gap-2 shadow-xl ${saved ? 'bg-green-500 shadow-green-500/20' : 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/20'}`}>
+          {saved ? <><CheckCircle size={20} /> Protocolo Salvo!</> : <><Calculator size={20} /> Calcular Meu Protocolo</>}
         </button>
       </div>
 
-      {/* Âncora para o Scroll Automático */}
-      <div ref={resultsRef} className="scroll-mt-24">
+      {/* Âncora para o Scroll Automático - agora com id para garantir acesso */}
+      <div id="ares-results-anchor" ref={resultsRef} className="scroll-mt-24">
         {results.target > 0 && (
           <div className={`p-8 rounded-3xl border-2 shadow-2xl ${currentTheme.border} bg-emerald-500/5`}>
-            <p className="text-center text-[11px] font-black uppercase text-gray-500">Meta Diária</p>
-            <p className="text-center text-6xl font-black text-emerald-500">{results.target.toFixed(0)} <span className="text-xl">kcal</span></p>
-            {/* Macros e Resumo aqui... */}
+            <div className="text-center mb-6">
+              <p className="text-[11px] font-black text-gray-500 uppercase tracking-widest mb-1">Meta Diária</p>
+              <p className="text-6xl font-black text-emerald-500">{results.target.toFixed(0)} <span className="text-xl text-gray-400">kcal</span></p>
+            </div>
+            <div className="grid grid-cols-3 gap-3 mb-6">
+              <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-center">
+                <p className="text-[10px] font-black text-red-400 uppercase mb-1">Proteína</p>
+                <p className={`text-2xl font-black ${currentTheme.text}`}>{results.protein}g</p>
+              </div>
+              <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-center">
+                <p className="text-[10px] font-black text-emerald-400 uppercase mb-1">Carbo</p>
+                <p className={`text-2xl font-black ${currentTheme.text}`}>{results.carbs}g</p>
+              </div>
+              <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-center">
+                <p className="text-[10px] font-black text-amber-400 uppercase mb-1">Gordura</p>
+                <p className={`text-2xl font-black ${currentTheme.text}`}>{results.fat}g</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="p-4 rounded-2xl bg-black/20 border border-white/5 text-center">
+                <p className="text-[10px] font-bold text-gray-500 uppercase">Basal (TMB)</p>
+                <p className={`text-lg font-bold ${currentTheme.text}`}>{results.tmb.toFixed(0)} kcal</p>
+              </div>
+              <div className="p-4 rounded-2xl bg-black/20 border border-white/5 text-center">
+                <p className="text-[10px] font-bold text-gray-500 uppercase">Total (TDEE)</p>
+                <p className={`text-lg font-bold ${currentTheme.text}`}>{results.tdee.toFixed(0)} kcal</p>
+              </div>
+            </div>
           </div>
         )}
       </div>

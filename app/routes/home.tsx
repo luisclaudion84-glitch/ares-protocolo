@@ -18,6 +18,7 @@ export default function Home() {
   // Lógica de Swipe
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
+  const [swipeIndicator, setSwipeIndicator] = useState<string | null>(null);
   const minSwipeDistance = 50;
   const tabs = ['dash', 'water', 'nutri', 'treino', 'evolucao'];
 
@@ -52,12 +53,17 @@ export default function Home() {
 
     if (isLeftSwipe && currentIndex < tabs.length - 1) {
       setActiveTab(tabs[currentIndex + 1]);
+      setSwipeIndicator(tabs[currentIndex + 1]);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
     if (isRightSwipe && currentIndex > 0) {
       setActiveTab(tabs[currentIndex - 1]);
+      setSwipeIndicator(tabs[currentIndex - 1]);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
+
+    // Limpa o indicador após a transição
+    setTimeout(() => setSwipeIndicator(null), 1000);
   };
 
   if (!authChecked) {
@@ -94,6 +100,18 @@ export default function Home() {
         setTheme={setTheme}
         onLogout={handleLogout}
       />
+
+      {/* Indicador de Swipe Mobile */}
+      <div className="sm:hidden fixed bottom-6 left-0 right-0 z-50 flex justify-center gap-2 pointer-events-none">
+        {tabs.map((tab) => (
+          <div 
+            key={tab}
+            className={`h-1.5 rounded-full transition-all duration-300 ${
+              activeTab === tab ? 'w-8 bg-emerald-500' : 'w-4 bg-white/30'
+            }`}
+          />
+        ))}
+      </div>
 
       <main className="pt-20 px-4 pb-8 max-w-5xl mx-auto flex flex-col items-center">
         <div className="w-full flex flex-col items-center justify-center">
