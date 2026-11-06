@@ -1,6 +1,6 @@
 // app/components/Navbar.tsx
 import React, { useEffect, useState, useRef } from 'react';
-import { Swords, LogOut, ChevronDown, Sun, Moon, Shield, Waves } from 'lucide-react';
+import { Swords, LogOut, ChevronDown, Sun, Moon, Shield, Waves, Menu, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { themes, type Theme } from '../types/themes';
 
@@ -52,6 +52,7 @@ export function Navbar({
   setActiveTab,
 }: NavbarProps) {
   const [themeOpen, setThemeOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [loadingUser, setLoadingUser] = useState(true);
   const [userName, setUserName] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -87,6 +88,7 @@ export function Navbar({
     return () => { mounted = false; };
   }, [userOverride]);
 
+  // Fecha o dropdown de tema ao clicar fora
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (themeRef.current && !themeRef.current.contains(e.target as Node)) {
@@ -97,8 +99,26 @@ export function Navbar({
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
+  // Bloqueia a rolagem e permite fechar com Esc enquanto o menu mobile está aberto
+  useEffect(() => {
+    if (!menuOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuOpen(false);
+    };
+    document.addEventListener('keydown', handleKey);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [menuOpen]);
+
   const handleNavClick = (id: string) => {
     setActiveTab?.(id);
+    setMenuOpen(false);
   };
 
   const handleThemeSelect = (theme: Theme) => {
@@ -107,6 +127,7 @@ export function Navbar({
   };
 
   const handleLogout = async () => {
+    setMenuOpen(false);
     try {
       if (onLogout) {
         await onLogout();
@@ -121,11 +142,12 @@ export function Navbar({
 
   const isActive = (id: string) => ActiveTab === id;
 
-  const navBaseClasses = "px-2 sm:px-3 py-2 rounded-lg text-[10px] sm:text-xs font-bold transition-colors whitespace-nowrap cursor-pointer flex-shrink-0";
+  const navBaseClasses = "px-3 py-2 rounded-lg text-xs font-bold transition-colors whitespace-nowrap cursor-pointer flex-shrink-0 border-none";
   const navActiveClasses = "bg-emerald-500 text-white shadow-sm";
-  const navInactiveClasses = "hover:bg-emerald-500/20 hover:text-emerald-500";
+  const navInactiveClasses = "bg-transparent hover:bg-emerald-500/20 hover:text-emerald-500";
 
   const themeNav = currentTheme?.nav ?? 'bg-white border-emerald-100';
+  const themeText = currentTheme?.text ?? 'text-slate-900';
   const firstName = getFirstName(userName);
   const displayName = loadingUser ? '...' : (firstName || 'Usuário');
 
@@ -134,10 +156,10 @@ export function Navbar({
       className={`w-full z-40 sticky top-0 ${themeNav} border-b transition-colors`}
       role="banner"
     >
-      <div className="max-w-6xl mx-auto px-2 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-14 sm:h-16 gap-2">
+      <div className="max-w-6xl mx-auto px-3 sm:px-6 lg:px-8">
+        <div className="relative z-50 flex items-center justify-between h-14 sm:h-16 gap-2">
           {/* Logo */}
-          <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+          <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0 min-w-0">
             <div className="rounded-full bg-emerald-500/10 p-1.5 sm:p-2">
               <Swords size={18} className="text-emerald-500" />
             </div>
@@ -148,7 +170,7 @@ export function Navbar({
               aria-label="Ir para Início"
             >
               <span
-                className={`text-xs sm:text-sm font-black tracking-tight truncate ${currentTheme?.text ?? 'text-slate-900'}`}
+                className={`text-xs sm:text-sm font-black tracking-tight truncate ${themeText}`}
                 style={{ letterSpacing: '-0.02em' }}
               >
                 PROTOCOLO ARES
@@ -157,12 +179,11 @@ export function Navbar({
             </button>
           </div>
 
-          {/* Abas - Scroll horizontal no mobile, flex normal no desktop */}
-          <nav 
-            className="flex items-center gap-1 sm:gap-2 overflow-x-auto" 
-            role="navigation" 
+          {/* Abas - somente desktop */}
+          <nav
+            className="hidden sm:flex items-center gap-2"
+            role="navigation"
             aria-label="Main navigation"
-            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
           >
             {NAV_ITEMS.map((item) => (
               <button
@@ -170,22 +191,24 @@ export function Navbar({
                 type="button"
                 onClick={() => handleNavClick(item.id)}
                 className={`${navBaseClasses} ${
-                  isActive(item.id) ? navActiveClasses : navInactiveClasses
-                } ${isActive(item.id) ? '' : (currentTheme?.text ?? 'text-slate-900')} bg-transparent border-none`}
+                  isActive(item.id)
+                    ? navActiveClasses
+                    : `${navInactiveClasses} ${themeText}`
+                }`}
               >
                 {item.label}
               </button>
             ))}
           </nav>
 
-          {/* Ações: Tema + Usuário + Logout */}
+          {/* Ações */}
           <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
             {/* Seletor de Tema */}
             <div className="relative z-50" ref={themeRef}>
               <button
                 type="button"
                 onClick={() => setThemeOpen(o => !o)}
-                className={`flex items-center gap-1 px-1.5 sm:px-2 py-1.5 rounded-md hover:bg-emerald-500/10 transition-colors text-sm font-bold select-none bg-transparent border-none ${currentTheme?.text ?? 'text-slate-900'}`}
+                className={`flex items-center gap-1 px-1.5 sm:px-2 py-1.5 rounded-md hover:bg-emerald-500/10 transition-colors text-sm font-bold select-none bg-transparent border-none ${themeText}`}
                 aria-expanded={themeOpen}
                 aria-label="Selecionar tema"
                 title="Selecionar tema"
@@ -203,10 +226,10 @@ export function Navbar({
                       key={theme.id}
                       type="button"
                       onClick={() => handleThemeSelect(theme)}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 text-sm font-bold transition-colors bg-transparent border-none text-left ${
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 text-sm font-bold transition-colors border-none text-left ${
                         currentTheme?.id === theme.id
                           ? 'bg-emerald-500 text-white'
-                          : `hover:bg-emerald-500/20 hover:text-emerald-500 ${currentTheme?.text ?? 'text-slate-900'}`
+                          : `bg-transparent hover:bg-emerald-500/20 hover:text-emerald-500 ${themeText}`
                       }`}
                     >
                       {themeIcon(theme.id)}
@@ -217,30 +240,95 @@ export function Navbar({
               )}
             </div>
 
-            {/* Identificação do Usuário - Apenas Primeiro Nome */}
+            {/* Usuário - somente desktop */}
             <div className="hidden sm:flex items-center gap-2 min-w-0">
               <div className="w-7 h-7 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
                 {displayName.charAt(0).toUpperCase()}
               </div>
-              <span className={`text-sm font-bold truncate max-w-[80px] ${currentTheme?.text ?? 'text-slate-900'}`}>
+              <span className={`text-sm font-bold truncate max-w-[80px] ${themeText}`}>
                 {displayName}
               </span>
             </div>
 
-            {/* Botão Sair */}
+            {/* Sair - somente desktop */}
             <button
               type="button"
               onClick={handleLogout}
-              className="px-2 sm:px-3 py-2 rounded-lg bg-rose-500 text-white text-xs sm:text-sm font-black hover:opacity-90 flex items-center gap-1 transition-opacity border-none cursor-pointer flex-shrink-0"
+              className="hidden sm:flex px-3 py-2 rounded-lg bg-rose-500 text-white text-sm font-black hover:opacity-90 items-center gap-1 transition-opacity border-none cursor-pointer flex-shrink-0"
               title="Sair"
               data-testid="logout-btn"
             >
               <LogOut size={14} />
-              <span className="hidden sm:inline">Sair</span>
+              <span>Sair</span>
+            </button>
+
+            {/* Hambúrguer - somente mobile */}
+            <button
+              type="button"
+              onClick={() => { setMenuOpen(o => !o); setThemeOpen(false); }}
+              className={`sm:hidden p-2 rounded-md hover:bg-emerald-500/10 transition-colors bg-transparent border-none cursor-pointer ${themeText}`}
+              aria-expanded={menuOpen}
+              aria-label={menuOpen ? 'Fechar menu' : 'Abrir menu'}
+              data-testid="menu-toggle"
+            >
+              {menuOpen ? <X size={22} /> : <Menu size={22} />}
             </button>
           </div>
         </div>
       </div>
+
+      {/* Menu mobile */}
+      {menuOpen && (
+        <>
+          <div
+            className="sm:hidden fixed inset-0 z-30 bg-black/40"
+            onClick={() => setMenuOpen(false)}
+            aria-hidden="true"
+          />
+          <div
+            className={`sm:hidden absolute left-0 right-0 top-full z-40 border-b shadow-xl ${themeNav}`}
+            role="navigation"
+            aria-label="Menu mobile"
+          >
+            <div className="px-3 py-3 space-y-1">
+              {NAV_ITEMS.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => handleNavClick(item.id)}
+                  className={`w-full text-left px-4 py-3 rounded-lg text-sm font-bold transition-colors border-none cursor-pointer ${
+                    isActive(item.id)
+                      ? navActiveClasses
+                      : `${navInactiveClasses} ${themeText}`
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="px-3 pb-3 pt-2 border-t border-emerald-500/20 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-8 h-8 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                  {displayName.charAt(0).toUpperCase()}
+                </div>
+                <span className={`text-sm font-bold truncate ${themeText}`}>
+                  {displayName}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="px-4 py-2 rounded-lg bg-rose-500 text-white text-sm font-black hover:opacity-90 flex items-center gap-1 transition-opacity border-none cursor-pointer flex-shrink-0"
+                data-testid="logout-btn-mobile"
+              >
+                <LogOut size={14} />
+                Sair
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </header>
   );
 }
